@@ -5,8 +5,8 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>KeyRecord 可视化</title>
   <link rel="stylesheet" href="css/style.css">
-  <script src="https://d3js.org/d3.v7.min.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/heatmap.js@2.0.5/build/heatmap.min.js"></script>
+  <script src="vendor/d3.v7.min.js"></script>
+  <script src="vendor/heatmap.min.js"></script>
 </head>
 <body>
   <div class="container">
@@ -17,6 +17,22 @@
         <span class="info-item">数据范围: <strong id="data-range">-</strong></span>
       </div>
     </header>
+    <section id="heatmap-section" class="section">
+      <h2>键盘热力图</h2>
+      <div class="heatmap-summary">
+        <span>范围: <strong id="keyboard-range">-</strong></span>
+        <span>可映射按键: <strong id="keyboard-total">0</strong></span>
+        <span id="keyboard-status" class="status-text">等待加载</span>
+      </div>
+      <div class="keyboard-shell">
+        <div id="keyboard-heatmap" aria-label="键盘热力图"></div>
+      </div>
+      <div class="heatmap-legend" aria-hidden="true">
+        <span>低频</span>
+        <div class="legend-gradient"></div>
+        <span>高频</span>
+      </div>
+    </section>
     <section id="calendar-section" class="section">
       <h2>📊 每日按键统计</h2>
       <div id="calendar-heatmap"></div>
@@ -24,6 +40,7 @@
   </div>
   <footer><p>KeyRecord Visualization</p></footer>
   <script src="js/calendar.js"></script>
+  <script src="js/keyboard.js"></script>
   <script src="js/main.js"></script>
 </body>
 </html>

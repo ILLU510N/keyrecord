@@ -4,6 +4,7 @@ const CalendarHeatmap = {
   cellSize: 15,
   cellPadding: 3,
   colors: ['#ebedf0', '#9be9a8', '#40c463', '#30a14e', '#216e39'],
+  onDateSelected: null,
 
   init() {
     this.container = document.getElementById('calendar-heatmap');
@@ -99,6 +100,7 @@ const CalendarHeatmap = {
         const count = dataMap.get(dateStr) || 0;
         return getColor(count);
       })
+      .attr('data-date', (d) => d.toISOString().split('T')[0])
       .attr('stroke', '#fff')
       .attr('stroke-width', 1)
       .attr('rx', 2)
@@ -114,6 +116,12 @@ const CalendarHeatmap = {
       .on('mouseout', function() {
         tooltip.style('display', 'none');
         d3.select(this).attr('stroke', '#fff').attr('stroke-width', 1);
+      })
+      .on('click', (event, d) => {
+        if (!this.onDateSelected) return;
+
+        const dateStr = d.toISOString().split('T')[0];
+        this.onDateSelected(dateStr);
       });
 
     const weekDays = ['日', '一', '二', '三', '四', '五', '六'];
@@ -147,6 +155,10 @@ const CalendarHeatmap = {
 
   showError(message) {
     this.container.innerHTML = '<p style="text-align:center;color:#ff6b6b;">加载失败: ' + message + '</p>';
+  },
+
+  setDateSelectHandler(handler) {
+    this.onDateSelected = handler;
   }
 };
 

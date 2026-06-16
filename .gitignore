@@ -5,3 +5,6 @@ build/
 out/
 /visualize/visualize/node_modules/
 visualize/node_modules
+/cmake-build-release/
+/build-vs18-x64/
+/build_debug/

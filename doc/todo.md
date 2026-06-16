@@ -266,7 +266,7 @@ visualize/
 - [ ] 深色/浅色主题切换（可选）
 - [ ] 键盘热力图容器尺寸: 1200px × 400px
 - [x] 日历图容器自适应宽度
-- [ ] 渐变色图例
+- [x] 渐变色图例
 - [x] GitHub 风格色板
 
 ---
@@ -276,7 +276,7 @@ visualize/
 #### 3.1 键盘热力图模块
 **文件**: `public/js/keyboard.js`
 
-- [ ] 初始化 heatmap.js 实例:
+- [x] 初始化 heatmap.js 实例:
   ```javascript
   const heatmapInstance = h337.create({
     container: document.getElementById('keyboard-heatmap'),
@@ -299,7 +299,7 @@ visualize/
     'url(images/keyboard.png)';
   ```
 
-- [ ] 实现数据加载和渲染:
+- [x] 实现数据加载和渲染:
   ```javascript
   async function loadKeyboardHeatmap(startDate, endDate) {
     const response = await fetch(
@@ -321,7 +321,7 @@ visualize/
   }
   ```
 
-- [ ] 添加鼠标悬停提示（显示按键名和次数）
+- [x] 添加鼠标悬停提示（显示按键名和次数）
 - [ ] 实现缩放和平移功能（可选）
 
 #### 3.2 日历图模块
@@ -353,7 +353,7 @@ visualize/
   - 根据按键数量映射颜色
   - 添加日期标签和提示
 
-- [ ] 实现点击日期联动更新键盘热力图
+- [x] 实现点击日期联动更新键盘热力图
 - [x] 添加日期悬停提示
 
 #### 3.3 时间轴选择器模块
@@ -450,9 +450,9 @@ visualize/
 - [ ] 缺点: 开发工作量大
 
 #### 4.3 方案 C: 使用 HTML/CSS 构建键盘
-- [ ] 使用 `<div>` 元素布局键盘
-- [ ] 每个按键一个 div，使用 absolute 定位
-- [ ] heatmap.js 叠加在键盘 div 上层
+- [x] 使用 HTML/CSS 元素布局键盘（实际使用 button 元素）
+- [x] 每个按键一个 button，使用 absolute 定位
+- [x] heatmap.js 叠加在键盘元素上层
 - [ ] 优点: 灵活，可交互
 - [ ] 缺点: 布局复杂
 
@@ -590,7 +590,7 @@ visualize/
 ## 里程碑
 
 - [x] **M1**: API 服务可用，能返回正确数据
-- [ ] **M2**: 基础键盘热力图显示
+- [x] **M2**: 基础键盘热力图显示
 - [x] **M3**: 日历图显示每日统计
 - [ ] **M4**: 时间轴选择器联动工作
 - [ ] **M5**: 完整功能可用，样式美化
