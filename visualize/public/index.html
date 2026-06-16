@@ -1,0 +1,29 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>KeyRecord 可视化</title>
+  <link rel="stylesheet" href="css/style.css">
+  <script src="https://d3js.org/d3.v7.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/heatmap.js@2.0.5/build/heatmap.min.js"></script>
+</head>
+<body>
+  <div class="container">
+    <header>
+      <h1>⌨️ KeyRecord - 按键统计可视化</h1>
+      <div id="db-info" class="db-info">
+        <span class="info-item">总按键数: <strong id="total-keys">-</strong></span>
+        <span class="info-item">数据范围: <strong id="data-range">-</strong></span>
+      </div>
+    </header>
+    <section id="calendar-section" class="section">
+      <h2>📊 每日按键统计</h2>
+      <div id="calendar-heatmap"></div>
+    </section>
+  </div>
+  <footer><p>KeyRecord Visualization</p></footer>
+  <script src="js/calendar.js"></script>
+  <script src="js/main.js"></script>
+</body>
+</html>

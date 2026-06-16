@@ -1,0 +1,17 @@
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body { font-family: -apple-system, BlinkMacSystemFont, sans-serif; background: #f5f7fa; color: #2c3e50; padding: 20px; }
+.container { max-width: 1400px; margin: 0 auto; }
+header { background: #fff; padding: 30px; border-radius: 12px; box-shadow: 0 2px 8px rgba(0,0,0,0.1); margin-bottom: 30px; text-align: center; }
+header h1 { font-size: 2.5em; color: #4a90e2; margin-bottom: 20px; }
+.db-info { display: flex; justify-content: center; gap: 40px; flex-wrap: wrap; }
+.info-item { font-size: 1em; color: #7f8c8d; }
+.info-item strong { color: #2c3e50; font-size: 1.2em; }
+.section { background: #fff; padding: 30px; border-radius: 12px; box-shadow: 0 2px 8px rgba(0,0,0,0.1); margin-bottom: 30px; }
+.section h2 { font-size: 1.8em; margin-bottom: 20px; color: #2c3e50; border-bottom: 3px solid #4a90e2; padding-bottom: 10px; }
+#calendar-heatmap { min-height: 200px; overflow-x: auto; padding: 20px 0; }
+.day { cursor: pointer; transition: all 0.2s; }
+.day:hover { stroke: #2c3e50; stroke-width: 2px; }
+.day-label { font-size: 12px; fill: #7f8c8d; }
+.month-label { font-size: 14px; font-weight: 600; fill: #2c3e50; }
+.tooltip { position: absolute; padding: 10px; background: rgba(0,0,0,0.8); color: white; border-radius: 6px; font-size: 0.9em; pointer-events: none; z-index: 1000; white-space: nowrap; }
+footer { text-align: center; padding: 30px; color: #7f8c8d; font-size: 0.9em; }

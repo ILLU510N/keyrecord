@@ -3,3 +3,5 @@ cmake-build-debug
 *.db
 build/
 out/
+/visualize/visualize/node_modules/
+visualize/node_modules
