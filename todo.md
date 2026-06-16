@@ -73,9 +73,9 @@
 **目标**: 创建 Node.js 后端服务，提供数据 API
 
 #### 1.1 项目初始化
-- [ ] 创建 `visualize/` 目录
-- [ ] 初始化 npm 项目: `npm init -y`
-- [ ] 安装依赖:
+- [x] 创建 `visualize/` 目录
+- [x] 初始化 npm 项目: `npm init -y`
+- [ ] 安装依赖:（部分完成：express / better-sqlite3 / cors 已安装，nodemon 未安装）
   ```bash
   npm install express better-sqlite3 cors
   npm install --save-dev nodemon
@@ -84,18 +84,18 @@
 #### 1.2 实现 API 端点
 **文件**: `visualize/server.js`
 
-- [ ] **GET /api/daily-stats**
+- [x] **GET /api/daily-stats**
   - 查询: `SELECT date, COUNT(*) as count FROM keys GROUP BY date ORDER BY date`
   - 返回格式: `[{date: "2024-01-01", count: 1234}, ...]`
   - 用途: calendar-heatmap 日历图数据
 
-- [ ] **GET /api/heatmap?date=YYYY-MM-DD**
+- [x] **GET /api/heatmap?date=YYYY-MM-DD**
   - 查询: `SELECT vk_code, key_name, COUNT(*) as count FROM keys WHERE date = ? GROUP BY vk_code`
   - 返回格式: `[{vk_code: 65, key_name: "A", count: 123, x: 100, y: 200}, ...]`
   - 需要映射虚拟键码到键盘坐标 (x, y)
   - 用途: heatmap.js 键盘热力图数据
 
-- [ ] **GET /api/heatmap?start=YYYY-MM-DD&end=YYYY-MM-DD**
+- [x] **GET /api/heatmap?start=YYYY-MM-DD&end=YYYY-MM-DD**
   - 查询: `SELECT vk_code, key_name, COUNT(*) as count FROM keys WHERE date BETWEEN ? AND ? GROUP BY vk_code`
   - 支持时间范围查询
   - 用途: 时间轴选择器联动更新
@@ -108,7 +108,7 @@
 #### 1.3 键盘坐标映射
 **文件**: `visualize/keyboard-layout.js`
 
-- [ ] 定义标准 QWERTY 键盘布局坐标
+- [x] 定义标准 QWERTY 键盘布局坐标
   ```javascript
   const keyboardLayout = {
     // 虚拟键码 -> {x, y, width, height} 坐标
@@ -117,7 +117,7 @@
     // ... 映射所有支持的按键
   };
   ```
-- [ ] 支持的按键类型:
+- [ ] 支持的按键类型:（部分完成：字母、数字、基础控制键、修饰键和部分标点已映射；功能键、方向键、数字键盘等未映射）
   - 字母键 A-Z (VK 65-90)
   - 数字键 0-9 (VK 48-57)
   - 功能键 F1-F12 (VK 112-123)
@@ -128,11 +128,11 @@
   - 标点符号
 
 #### 1.4 测试 API
-- [ ] 启动服务: `node server.js`
-- [ ] 测试端点:
+- [x] 启动服务: `node server.js`
+- [x] 测试端点:
   - `curl http://localhost:3000/api/daily-stats`
   - `curl http://localhost:3000/api/heatmap?date=2024-01-01`
-- [ ] 验证 CORS 配置
+- [x] 验证 CORS 配置
 
 ---
 
@@ -162,7 +162,7 @@ visualize/
 #### 2.2 引入依赖库
 **文件**: `public/index.html`
 
-- [ ] 引入 CDN 资源:
+- [ ] 引入 CDN 资源:（部分完成：已引入 D3.js 和 heatmap.js，未引入 calendar-heatmap）
   ```html
   <!-- D3.js -->
   <script src="https://d3js.org/d3.v7.min.js"></script>
@@ -262,12 +262,12 @@ visualize/
 #### 2.4 样式设计
 **文件**: `public/css/style.css`
 
-- [ ] 响应式布局
+- [x] 响应式布局
 - [ ] 深色/浅色主题切换（可选）
 - [ ] 键盘热力图容器尺寸: 1200px × 400px
-- [ ] 日历图容器自适应宽度
+- [x] 日历图容器自适应宽度
 - [ ] 渐变色图例
-- [ ] GitHub 风格色板
+- [x] GitHub 风格色板
 
 ---
 
@@ -327,7 +327,7 @@ visualize/
 #### 3.2 日历图模块
 **文件**: `public/js/calendar.js`
 
-- [ ] 使用 D3.js 手动实现或使用 calendar-heatmap 库
+- [x] 使用 D3.js 手动实现或使用 calendar-heatmap 库
 - [ ] 方案 A: 使用 calendar-heatmap 库（推荐）:
   ```javascript
   const cal = new CalHeatmap();
@@ -347,14 +347,14 @@ visualize/
   });
   ```
 
-- [ ] 方案 B: 使用 D3.js 手动实现（更灵活）:
+- [x] 方案 B: 使用 D3.js 手动实现（更灵活）:
   - 创建 SVG 画布
   - 按日期绘制矩形格子
   - 根据按键数量映射颜色
   - 添加日期标签和提示
 
 - [ ] 实现点击日期联动更新键盘热力图
-- [ ] 添加日期悬停提示
+- [x] 添加日期悬停提示
 
 #### 3.3 时间轴选择器模块
 **文件**: `public/js/timeline.js`
@@ -430,7 +430,7 @@ visualize/
   ```
 
 - [ ] 添加加载动画
-- [ ] 错误处理和提示
+- [x] 错误处理和提示
 
 ---
 
@@ -479,7 +479,7 @@ visualize/
 - [ ] 数据导出功能（CSV, JSON, PNG）
 - [ ] 打印优化
 - [ ] 加载进度条
-- [ ] 空数据状态提示
+- [x] 空数据状态提示
 
 #### 5.3 高级功能（可选）
 - [ ] 小时级热力图
@@ -589,9 +589,9 @@ visualize/
 
 ## 里程碑
 
-- [ ] **M1**: API 服务可用，能返回正确数据
+- [x] **M1**: API 服务可用，能返回正确数据
 - [ ] **M2**: 基础键盘热力图显示
-- [ ] **M3**: 日历图显示每日统计
+- [x] **M3**: 日历图显示每日统计
 - [ ] **M4**: 时间轴选择器联动工作
 - [ ] **M5**: 完整功能可用，样式美化
 - [ ] **M6**: 性能优化完成
