@@ -10,7 +10,7 @@ param(
 
     [string]$BoostIncludeDir,
     [string]$Generator,
-    [bool]$SkipTests = $true
+    [switch]$SkipTests
 )
 
 $ErrorActionPreference = "Stop"
@@ -80,33 +80,22 @@ try {
 
     $buildArgs = @(
         "--build", $buildDirPath,
-        "--config", $BuildConfiguration
+        "--config", $BuildConfiguration,
+        "--target", "keyrecord_release_package"
     )
-    Invoke-Step -Name "编译应用目标（$BuildConfiguration）" -FilePath $cmakePath -ArgumentList $buildArgs
+    Invoke-Step -Name "构建发布入口目标（$BuildConfiguration）" -FilePath $cmakePath -ArgumentList $buildArgs
 
     if ($SkipTests) {
         Write-Host "==> 已跳过测试"
         return
     }
 
-    $testTargets = @(
-        "keyrecord_tests",
-        "config_path_tests",
-        "embedded_resources_tests",
-        "api_queries_tests",
-        "http_router_tests",
-        "visualization_service_tests",
-        "server_bootstrap_tests",
-        "server_startup_tests",
-        "readonly_database_tests"
-    )
-
     $buildTestArgs = @(
         "--build", $buildDirPath,
         "--config", $TestConfiguration,
-        "--target"
-    ) + $testTargets
-    Invoke-Step -Name "编译测试目标（$TestConfiguration）" -FilePath $cmakePath -ArgumentList $buildTestArgs
+        "--target", "keyrecord_debug_tests"
+    )
+    Invoke-Step -Name "编译测试目标聚合入口（$TestConfiguration）" -FilePath $cmakePath -ArgumentList $buildTestArgs
 
     $ctestArgs = @(
         "--test-dir", $buildDirPath,

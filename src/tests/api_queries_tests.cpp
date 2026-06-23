@@ -38,9 +38,9 @@ bool seedDatabase(sqlite3* database) {
                    "INSERT INTO keys(timestamp,date,hour,vk_code,key_name) VALUES"
                    "(1767225600,'2026-01-01',0,65,'A'),"
                    "(1767225601,'2026-01-01',0,65,'A'),"
-                   "(1767225602,'2026-01-01',0,222,'''');"
+                   "(1767225602,'2026-01-01',13,222,'''');"
                    "INSERT INTO keys(timestamp,date,hour,vk_code,key_name) VALUES"
-                   "(1767312000,'2026-01-02',0,66,'B');"
+                   "(1767312000,'2026-01-02',5,66,'B');"
                    "INSERT INTO keys(timestamp,date,hour,vk_code,key_name) VALUES"
                    "(1767398400,'2026-01-03',0,116,'F5'),"
                    "(1767398401,'2026-01-03',0,116,'F5'),"
@@ -81,6 +81,12 @@ int main() {
                      "/api/daily-stats JSON mismatch") &&
          ok;
 
+    const auto hourlyStats = keyrecord::queryHourlyStats(database, "2026-01-01");
+    ok = expectEqual(hourlyStats.body,
+                     "[{\"hour\":0,\"count\":2},{\"hour\":13,\"count\":1}]",
+                     "/api/hourly-stats JSON mismatch") &&
+         ok;
+
     const auto topKey = keyrecord::queryKeys(database, std::nullopt, std::nullopt, 1);
     ok = expectEqual(topKey.body,
                      "[{\"key_name\":\"F5\",\"vk_code\":116,\"count\":4}]",
@@ -107,6 +113,58 @@ int main() {
                      "{\"vk_code\":39,\"key_name\":\"Right\",\"count\":2,\"x\":1115,\"y\":345},"
                      "{\"vk_code\":98,\"key_name\":\"Numpad2\",\"count\":1,\"x\":1225,\"y\":285}]",
                      "/api/heatmap should keep function keys, navigation keys, arrow keys and numpad data") &&
+         ok;
+
+    const auto hourlyHeatmap = keyrecord::queryHourlyHeatmap(database, "2026-01-01", "2026-01-01");
+    ok = expectEqual(hourlyHeatmap.body,
+                     "[{\"weekday\":4,\"hour\":0,\"count\":2},{\"weekday\":4,\"hour\":13,\"count\":1}]",
+                     "/api/hourly-heatmap weekday/hour JSON mismatch") &&
+         ok;
+
+    const auto timeline = keyrecord::queryTimeline(database, "2026-01-02", 100);
+    ok = expectEqual(timeline.body,
+                     "[{\"ts\":1767312000,\"vk_code\":66,\"key_name\":\"B\"}]",
+                     "/api/timeline JSON mismatch") &&
+         ok;
+
+    const auto regionStats = keyrecord::queryRegionStats(database, "2026-01-03", "2026-01-03");
+    ok = expectEqual(regionStats.body,
+                     "[{\"region\":\"letters\",\"count\":0},{\"region\":\"digits\",\"count\":0},"
+                     "{\"region\":\"numpad\",\"count\":1},{\"region\":\"function\",\"count\":4},"
+                     "{\"region\":\"navigation\",\"count\":5},{\"region\":\"modifiers\",\"count\":0},"
+                     "{\"region\":\"control\",\"count\":0},{\"region\":\"punctuation\",\"count\":0},"
+                     "{\"region\":\"other\",\"count\":0}]",
+                     "/api/region-stats JSON mismatch") &&
+         ok;
+
+    const auto handStats = keyrecord::queryHandStats(database, "2026-01-03", "2026-01-03");
+    ok = expectEqual(handStats.body,
+                     "[{\"hand\":\"left\",\"count\":4},{\"hand\":\"right\",\"count\":6},"
+                     "{\"hand\":\"both\",\"count\":0},{\"hand\":\"unknown\",\"count\":0}]",
+                     "/api/hand-stats JSON mismatch") &&
+         ok;
+
+    const auto speed = keyrecord::querySpeed(database, "2026-01-03", 5);
+    ok = expectEqual(speed.body,
+                     "[{\"minute\":0,\"count\":10}]",
+                     "/api/speed JSON mismatch") &&
+         ok;
+
+    // 组合统计需要修饰键紧随普通键的有序事件，单独插入到 2026-01-04 验证。
+    ok = execSql(database,
+                 "INSERT INTO keys(timestamp,date,hour,vk_code,key_name) VALUES"
+                 "(1767484800,'2026-01-04',9,162,'Ctrl'),"
+                 "(1767484800,'2026-01-04',9,67,'C'),"
+                 "(1767484801,'2026-01-04',9,162,'Ctrl'),"
+                 "(1767484801,'2026-01-04',9,67,'C'),"
+                 "(1767484802,'2026-01-04',9,162,'Ctrl'),"
+                 "(1767484802,'2026-01-04',9,86,'V');") &&
+         ok;
+
+    const auto combos = keyrecord::queryCombos(database, "2026-01-04", std::nullopt, std::nullopt, 20);
+    ok = expectEqual(combos.body,
+                     "[{\"combo\":\"Ctrl+C\",\"count\":2},{\"combo\":\"Ctrl+V\",\"count\":1}]",
+                     "/api/combos JSON mismatch") &&
          ok;
 
     sqlite3_close(database);

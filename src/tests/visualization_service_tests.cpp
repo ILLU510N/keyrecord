@@ -17,7 +17,7 @@ bool expect(bool condition, const char* message) {
 
 bool expectEqual(const std::string& actual, const std::string& expected, const char* message) {
     if (actual != expected) {
-        std::cerr << message << "\n期望: " << expected << "\n实际: " << actual << "\n";
+        std::cerr << message << "\nExpected: " << expected << "\nActual: " << actual << "\n";
         return false;
     }
     return true;
@@ -27,7 +27,7 @@ bool execSql(sqlite3* database, const char* sql) {
     char* error = nullptr;
     const int rc = sqlite3_exec(database, sql, nullptr, nullptr, &error);
     if (rc != SQLITE_OK) {
-        std::cerr << "SQL 执行失败: " << (error ? error : sqlite3_errmsg(database)) << "\n";
+        std::cerr << "SQL execution failed: " << (error ? error : sqlite3_errmsg(database)) << "\n";
         sqlite3_free(error);
         return false;
     }
@@ -73,34 +73,34 @@ int main() {
     std::filesystem::remove(dbPath);
     std::filesystem::remove(missingPath);
 
-    bool ok = expect(createWritableFixture(dbPath), "测试数据库创建失败");
+    bool ok = expect(createWritableFixture(dbPath), "Failed to create test database");
 
     std::string errorMessage;
     auto missingService = keyrecord::VisualizationService::open(missingPath.string(), &errorMessage);
-    ok = expect(!missingService.has_value(), "不存在的数据库不应创建可视化服务") && ok;
-    ok = expect(!errorMessage.empty(), "数据库打开失败时应返回错误信息") && ok;
-    ok = expect(!std::filesystem::exists(missingPath), "只读服务打开不存在数据库不应创建文件") && ok;
+    ok = expect(!missingService.has_value(), "Missing database should not create a visualization service") && ok;
+    ok = expect(!errorMessage.empty(), "Failed database open should return an error message") && ok;
+    ok = expect(!std::filesystem::exists(missingPath), "Opening a missing database in read-only mode should not create a file") && ok;
 
     {
         errorMessage.clear();
         auto service = keyrecord::VisualizationService::open(dbPath.string(), &errorMessage);
-        ok = expect(service.has_value(), "可视化服务打开已有数据库失败") && ok;
-        ok = expect(errorMessage.empty(), "成功打开可视化服务时错误信息应为空") && ok;
+        ok = expect(service.has_value(), "Failed to open visualization service for an existing database") && ok;
+        ok = expect(errorMessage.empty(), "Error message should be empty after successfully opening the visualization service") && ok;
 
         if (service) {
             const auto index = service->handleRequest("GET", "/");
-            ok = expect(index.status == 200, "可视化服务首页状态码应为 200") && ok;
-            ok = expect(index.contentType == "text/html; charset=utf-8", "可视化服务首页 Content-Type 错误") && ok;
-            ok = expect(index.body.find("KeyRecord") != std::string::npos, "可视化服务首页内容缺少 KeyRecord") && ok;
-            ok = expect(hasHeader(index, "Access-Control-Allow-Origin", "*"), "可视化服务首页缺少 CORS 头") && ok;
+            ok = expect(index.status == 200, "Visualization service index should return status 200") && ok;
+            ok = expect(index.contentType == "text/html; charset=utf-8", "Visualization service index Content-Type mismatch") && ok;
+            ok = expect(index.body.find("KeyRecord") != std::string::npos, "Visualization service index should contain KeyRecord") && ok;
+            ok = expect(hasHeader(index, "Access-Control-Allow-Origin", "*"), "Visualization service index should include the CORS header") && ok;
 
             const auto info = service->handleRequest("GET", "/api/info");
             ok = expectEqual(
                      info.body,
                      "{\"total_keys\":2,\"first_date\":\"2026-01-01\",\"last_date\":\"2026-01-02\",\"unique_keys\":2}",
-                     "可视化服务 /api/info JSON 不匹配") &&
+                     "Visualization service /api/info JSON mismatch") &&
                  ok;
-            ok = expect(hasHeader(info, "Access-Control-Allow-Origin", "*"), "可视化服务 API 缺少 CORS 头") && ok;
+            ok = expect(hasHeader(info, "Access-Control-Allow-Origin", "*"), "Visualization service API should include the CORS header") && ok;
         }
     }
 

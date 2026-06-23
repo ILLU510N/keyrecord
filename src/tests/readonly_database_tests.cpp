@@ -18,7 +18,7 @@ bool expect(bool condition, const char* message) {
 
 bool expectEqual(const std::string& actual, const std::string& expected, const char* message) {
     if (actual != expected) {
-        std::cerr << message << "\n期望: " << expected << "\n实际: " << actual << "\n";
+        std::cerr << message << "\nExpected: " << expected << "\nActual: " << actual << "\n";
         return false;
     }
     return true;
@@ -62,33 +62,33 @@ int main() {
     std::filesystem::remove(dbPath);
     std::filesystem::remove(missingPath);
 
-    bool ok = expect(createWritableFixture(dbPath), "测试数据库创建失败");
+    bool ok = expect(createWritableFixture(dbPath), "Failed to create test database");
 
     std::string errorMessage;
     {
         auto database = keyrecord::ReadOnlyDatabase::open(dbPath.string(), &errorMessage);
-        ok = expect(database.has_value(), "只读打开已有数据库失败") && ok;
-        ok = expect(errorMessage.empty(), "成功打开时错误信息应为空") && ok;
+        ok = expect(database.has_value(), "Failed to open existing database in read-only mode") && ok;
+        ok = expect(errorMessage.empty(), "Error message should be empty after a successful open") && ok;
 
         if (database) {
             const auto info = keyrecord::queryInfo(database->get());
             ok = expectEqual(info.body,
                              "{\"total_keys\":1,\"first_date\":\"2026-01-01\",\"last_date\":\"2026-01-01\",\"unique_keys\":1}",
-                             "只读连接查询结果错误") &&
+                             "Unexpected read-only query result") &&
                  ok;
             ok = expect(!execSql(database->get(),
                                  "INSERT INTO keys(timestamp,date,hour,vk_code,key_name) "
                                  "VALUES(1767225601,'2026-01-01',0,66,'B');"),
-                        "只读连接不应允许写入") &&
+                        "Read-only connection should not allow writes") &&
                  ok;
         }
     }
 
     errorMessage.clear();
     auto missing = keyrecord::ReadOnlyDatabase::open(missingPath.string(), &errorMessage);
-    ok = expect(!missing.has_value(), "只读打开不存在数据库不应成功") && ok;
-    ok = expect(!errorMessage.empty(), "打开不存在数据库失败时应返回错误信息") && ok;
-    ok = expect(!std::filesystem::exists(missingPath), "只读打开不存在数据库不应创建文件") && ok;
+    ok = expect(!missing.has_value(), "Opening a missing database in read-only mode should fail") && ok;
+    ok = expect(!errorMessage.empty(), "Opening a missing database should return an error message") && ok;
+    ok = expect(!std::filesystem::exists(missingPath), "Opening a missing database in read-only mode should not create a file") && ok;
 
     std::filesystem::remove(dbPath);
     return ok ? 0 : 1;

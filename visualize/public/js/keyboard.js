@@ -1,10 +1,13 @@
 const KeyboardHeatmap = {
   container: null,
+  viewportElement: null,
+  stageElement: null,
   statusElement: null,
   totalElement: null,
   rangeElement: null,
   tooltipElement: null,
   heatmapInstance: null,
+  zoom: null,
   data: [],
   layout: [
     // 坐标需与 src/keyboard_layout.cpp 保持一致。
@@ -117,6 +120,8 @@ const KeyboardHeatmap = {
 
   init() {
     this.container = document.getElementById('keyboard-heatmap');
+    this.viewportElement = document.getElementById('keyboard-viewport');
+    this.stageElement = document.getElementById('keyboard-stage');
     this.statusElement = document.getElementById('keyboard-status');
     this.totalElement = document.getElementById('keyboard-total');
     this.rangeElement = document.getElementById('keyboard-range');
@@ -128,6 +133,7 @@ const KeyboardHeatmap = {
 
     this.renderKeyboardLayout();
     this.initHeatmap();
+    this.initZoomControls();
     console.log('✓ 键盘热力图初始化完成');
   },
 
@@ -178,6 +184,55 @@ const KeyboardHeatmap = {
         1.0: '#ef4444'
       }
     });
+  },
+
+  initZoomControls() {
+    if (!window.d3 || !this.viewportElement || !this.stageElement) {
+      this.setStatus('缩放组件未加载，已显示键盘布局');
+      return;
+    }
+
+    this.zoom = d3.zoom()
+      .scaleExtent([0.65, 2.4])
+      .translateExtent([[-520, -260], [1920, 760]])
+      .on('zoom', (event) => {
+        this.applyZoomTransform(event.transform);
+      });
+
+    d3.select(this.viewportElement)
+      .call(this.zoom)
+      .on('dblclick.zoom', null);
+
+    this.bindZoomButton('keyboard-zoom-in', () => this.scaleBy(1.2));
+    this.bindZoomButton('keyboard-zoom-out', () => this.scaleBy(1 / 1.2));
+    this.bindZoomButton('keyboard-zoom-reset', () => this.resetZoom());
+  },
+
+  bindZoomButton(id, handler) {
+    const button = document.getElementById(id);
+    if (button) {
+      button.addEventListener('click', handler);
+    }
+  },
+
+  applyZoomTransform(transform) {
+    this.stageElement.style.transform = 'translate(' + transform.x + 'px,' + transform.y + 'px) scale(' + transform.k + ')';
+  },
+
+  scaleBy(factor) {
+    if (!this.zoom || !this.viewportElement) return;
+    d3.select(this.viewportElement)
+      .transition()
+      .duration(160)
+      .call(this.zoom.scaleBy, factor);
+  },
+
+  resetZoom() {
+    if (!this.zoom || !this.viewportElement) return;
+    d3.select(this.viewportElement)
+      .transition()
+      .duration(180)
+      .call(this.zoom.transform, d3.zoomIdentity);
   },
 
   async loadKeyboardHeatmap(startDate, endDate) {
@@ -231,6 +286,88 @@ const KeyboardHeatmap = {
     this.updateKeyStates(max);
   },
 
+  exportPng(range) {
+    const canvas = document.createElement('canvas');
+    canvas.width = 1400;
+    canvas.height = 410;
+    const context = canvas.getContext('2d');
+    if (!context) {
+      this.setStatus('PNG 导出失败: canvas 不可用');
+      return;
+    }
+
+    this.drawKeyboardExport(context, false);
+
+    const heatmapCanvas = this.container ? this.container.querySelector('.heatmap-canvas') : null;
+    if (heatmapCanvas) {
+      context.drawImage(heatmapCanvas, 0, 0);
+    }
+
+    this.drawKeyboardExport(context, true);
+
+    const link = document.createElement('a');
+    link.href = canvas.toDataURL('image/png');
+    link.download = 'keyrecord_keyboard_' + this.exportRangeToken(range) + '.png';
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    this.setStatus('PNG 已导出');
+  },
+
+  drawKeyboardExport(context, labelsOnly) {
+    const countByCode = new Map(this.data.map(item => [String(item.vk_code), Number(item.count) || 0]));
+    const max = this.data.length > 0 ? Math.max(...this.data.map(item => Number(item.count) || 0), 1) : 1;
+
+    if (!labelsOnly) {
+      const background = context.createLinearGradient(0, 0, 0, 410);
+      background.addColorStop(0, '#f8fafc');
+      background.addColorStop(1, '#edf3f8');
+      context.fillStyle = background;
+      context.fillRect(0, 0, 1400, 410);
+    }
+
+    this.layout.forEach((key) => {
+      const count = countByCode.get(String(key.code)) || 0;
+      const heat = count > 0 ? Math.max(count / max, 0.12) : 0;
+
+      if (!labelsOnly) {
+        this.drawRoundedRect(context, key.x, key.y, key.width, key.height, 6);
+        context.fillStyle = count > 0 ? 'rgba(239, 68, 68, ' + (0.08 + heat * 0.16).toFixed(3) + ')' : '#f1f5f9';
+        context.fill();
+        context.strokeStyle = count > 0 ? 'rgba(239, 68, 68, 0.75)' : '#b8c5d4';
+        context.lineWidth = 1;
+        context.stroke();
+      }
+
+      context.fillStyle = '#26384d';
+      context.font = '600 13px Consolas, monospace';
+      context.textAlign = 'center';
+      context.textBaseline = 'middle';
+      context.fillText(key.label, key.x + key.width / 2, key.y + key.height / 2);
+    });
+  },
+
+  drawRoundedRect(context, x, y, width, height, radius) {
+    context.beginPath();
+    context.moveTo(x + radius, y);
+    context.lineTo(x + width - radius, y);
+    context.quadraticCurveTo(x + width, y, x + width, y + radius);
+    context.lineTo(x + width, y + height - radius);
+    context.quadraticCurveTo(x + width, y + height, x + width - radius, y + height);
+    context.lineTo(x + radius, y + height);
+    context.quadraticCurveTo(x, y + height, x, y + height - radius);
+    context.lineTo(x, y + radius);
+    context.quadraticCurveTo(x, y, x + radius, y);
+    context.closePath();
+  },
+
+  exportRangeToken(range) {
+    if (range && range.start && range.end) {
+      return range.start === range.end ? range.start : range.start + '_' + range.end;
+    }
+    return 'all';
+  },
+
   updateKeyStates(max) {
     const countByCode = new Map(this.data.map(item => [String(item.vk_code), item.count]));
 
@@ -259,6 +396,33 @@ const KeyboardHeatmap = {
     if (this.tooltipElement) {
       this.tooltipElement.style.display = 'none';
     }
+  },
+
+  // 供时序回放高亮单个按键。
+  flashKey(vkCode, durationMs) {
+    if (!this.container) return;
+    const keyElement = this.container.querySelector('.keyboard-key[data-vk-code="' + String(vkCode) + '"]');
+    if (!keyElement) return;
+
+    keyElement.classList.add('is-playing');
+    if (keyElement._flashTimer) {
+      clearTimeout(keyElement._flashTimer);
+    }
+    keyElement._flashTimer = setTimeout(() => {
+      keyElement.classList.remove('is-playing');
+      keyElement._flashTimer = null;
+    }, Math.max(80, durationMs || 160));
+  },
+
+  clearPlaybackHighlights() {
+    if (!this.container) return;
+    this.container.querySelectorAll('.keyboard-key.is-playing').forEach((keyElement) => {
+      if (keyElement._flashTimer) {
+        clearTimeout(keyElement._flashTimer);
+        keyElement._flashTimer = null;
+      }
+      keyElement.classList.remove('is-playing');
+    });
   },
 
   setStatus(message) {

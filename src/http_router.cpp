@@ -16,6 +16,15 @@ struct ParsedTarget {
     std::map<std::string, std::string> query;
 };
 
+constexpr int DEFAULT_KEYS_LIMIT = 20;
+constexpr int MAX_KEYS_LIMIT = 100;
+constexpr int DEFAULT_COMBOS_LIMIT = 20;
+constexpr int MAX_COMBOS_LIMIT = 100;
+constexpr int DEFAULT_TIMELINE_LIMIT = 2000;
+constexpr int MAX_TIMELINE_LIMIT = 20000;
+constexpr int DEFAULT_SPEED_BUCKET = 5;
+constexpr int MAX_SPEED_BUCKET = 60;
+
 std::string percentDecode(std::string_view value) {
     std::string decoded;
     decoded.reserve(value.size());
@@ -86,18 +95,68 @@ std::optional<std::string_view> findQuery(const ParsedTarget& target, const std:
     return std::string_view(it->second);
 }
 
-int parseLimit(const ParsedTarget& target) {
-    const auto value = findQuery(target, "limit");
-    if (!value) {
-        return 20;
+int parseDatePart(std::string_view value, size_t offset, size_t length) {
+    int result = 0;
+    for (size_t i = 0; i < length; ++i) {
+        const char ch = value[offset + i];
+        if (ch < '0' || ch > '9') {
+            return -1;
+        }
+        result = result * 10 + (ch - '0');
+    }
+    return result;
+}
+
+bool isLeapYear(int year) {
+    return (year % 4 == 0 && year % 100 != 0) || year % 400 == 0;
+}
+
+int daysInMonth(int year, int month) {
+    switch (month) {
+        case 2:
+            return isLeapYear(year) ? 29 : 28;
+        case 4:
+        case 6:
+        case 9:
+        case 11:
+            return 30;
+        default:
+            return 31;
+    }
+}
+
+bool isValidDateValue(std::string_view value) {
+    if (value.size() != 10 || value[4] != '-' || value[7] != '-') {
+        return false;
     }
 
-    int limit = 20;
-    const auto result = std::from_chars(value->data(), value->data() + value->size(), limit);
-    if (result.ec != std::errc() || limit <= 0) {
-        return 20;
+    const int year = parseDatePart(value, 0, 4);
+    const int month = parseDatePart(value, 5, 2);
+    const int day = parseDatePart(value, 8, 2);
+
+    if (year <= 0 || month < 1 || month > 12 || day < 1) {
+        return false;
     }
-    return limit;
+
+    return day <= daysInMonth(year, month);
+}
+
+int parseBoundedInt(const ParsedTarget& target, const std::string& name, int defaultValue, int maxValue) {
+    const auto value = findQuery(target, name);
+    if (!value) {
+        return defaultValue;
+    }
+
+    int parsed = defaultValue;
+    const auto result = std::from_chars(value->data(), value->data() + value->size(), parsed);
+    if (result.ec != std::errc() || parsed <= 0) {
+        return defaultValue;
+    }
+    return parsed > maxValue ? maxValue : parsed;
+}
+
+int parseLimit(const ParsedTarget& target) {
+    return parseBoundedInt(target, "limit", DEFAULT_KEYS_LIMIT, MAX_KEYS_LIMIT);
 }
 
 HttpResponse fromApiResponse(ApiResponse response) {
@@ -122,6 +181,55 @@ HttpResponse jsonResponse(int status, std::string body) {
             {"Access-Control-Allow-Headers", "Content-Type"},
         },
     };
+}
+
+HttpResponse badRequest(const char* message) {
+    std::string body = "{\"error\":\"";
+    body += message;
+    body += "\"}";
+    return jsonResponse(400, std::move(body));
+}
+
+std::optional<HttpResponse> validateDateParameter(const ParsedTarget& target, const std::string& name) {
+    const auto value = findQuery(target, name);
+    if (!value) {
+        return std::nullopt;
+    }
+    if (!isValidDateValue(*value)) {
+        return badRequest("invalid date format");
+    }
+    return std::nullopt;
+}
+
+std::optional<HttpResponse> validateRequiredDateParameter(const ParsedTarget& target, const std::string& name) {
+    const auto value = findQuery(target, name);
+    if (!value) {
+        return badRequest("date is required");
+    }
+    if (!isValidDateValue(*value)) {
+        return badRequest("invalid date format");
+    }
+    return std::nullopt;
+}
+
+std::optional<HttpResponse> validateDateRange(const ParsedTarget& target) {
+    const auto startDate = findQuery(target, "start");
+    const auto endDate = findQuery(target, "end");
+
+    if (startDate.has_value() != endDate.has_value()) {
+        return badRequest("start and end must be provided together");
+    }
+    if (!startDate) {
+        return std::nullopt;
+    }
+    if (!isValidDateValue(*startDate) || !isValidDateValue(*endDate)) {
+        return badRequest("invalid date format");
+    }
+    if (*startDate > *endDate) {
+        return badRequest("start date must not be later than end date");
+    }
+
+    return std::nullopt;
 }
 
 HttpResponse methodNotAllowed() {
@@ -174,12 +282,72 @@ HttpResponse handleHttpRequest(std::string_view method, std::string_view target,
     if (parsed.path == "/api/daily-stats") {
         return fromApiResponse(queryDailyStats(database));
     }
+    if (parsed.path == "/api/hourly-stats") {
+        if (auto error = validateRequiredDateParameter(parsed, "date")) {
+            return std::move(*error);
+        }
+        return fromApiResponse(queryHourlyStats(database, *findQuery(parsed, "date")));
+    }
     if (parsed.path == "/api/keys") {
+        if (auto error = validateDateRange(parsed)) {
+            return std::move(*error);
+        }
         return fromApiResponse(queryKeys(database, findQuery(parsed, "start"), findQuery(parsed, "end"), parseLimit(parsed)));
     }
     if (parsed.path == "/api/heatmap") {
+        if (auto error = validateDateParameter(parsed, "date")) {
+            return std::move(*error);
+        }
+        if (auto error = validateDateRange(parsed)) {
+            return std::move(*error);
+        }
         return fromApiResponse(
             queryHeatmap(database, findQuery(parsed, "date"), findQuery(parsed, "start"), findQuery(parsed, "end")));
+    }
+    if (parsed.path == "/api/hourly-heatmap") {
+        if (auto error = validateDateRange(parsed)) {
+            return std::move(*error);
+        }
+        return fromApiResponse(queryHourlyHeatmap(database, findQuery(parsed, "start"), findQuery(parsed, "end")));
+    }
+    if (parsed.path == "/api/timeline") {
+        if (auto error = validateRequiredDateParameter(parsed, "date")) {
+            return std::move(*error);
+        }
+        return fromApiResponse(queryTimeline(
+            database, *findQuery(parsed, "date"),
+            parseBoundedInt(parsed, "limit", DEFAULT_TIMELINE_LIMIT, MAX_TIMELINE_LIMIT)));
+    }
+    if (parsed.path == "/api/combos") {
+        if (auto error = validateDateParameter(parsed, "date")) {
+            return std::move(*error);
+        }
+        if (auto error = validateDateRange(parsed)) {
+            return std::move(*error);
+        }
+        return fromApiResponse(queryCombos(
+            database, findQuery(parsed, "date"), findQuery(parsed, "start"), findQuery(parsed, "end"),
+            parseBoundedInt(parsed, "limit", DEFAULT_COMBOS_LIMIT, MAX_COMBOS_LIMIT)));
+    }
+    if (parsed.path == "/api/region-stats") {
+        if (auto error = validateDateRange(parsed)) {
+            return std::move(*error);
+        }
+        return fromApiResponse(queryRegionStats(database, findQuery(parsed, "start"), findQuery(parsed, "end")));
+    }
+    if (parsed.path == "/api/hand-stats") {
+        if (auto error = validateDateRange(parsed)) {
+            return std::move(*error);
+        }
+        return fromApiResponse(queryHandStats(database, findQuery(parsed, "start"), findQuery(parsed, "end")));
+    }
+    if (parsed.path == "/api/speed") {
+        if (auto error = validateRequiredDateParameter(parsed, "date")) {
+            return std::move(*error);
+        }
+        return fromApiResponse(querySpeed(
+            database, *findQuery(parsed, "date"),
+            parseBoundedInt(parsed, "bucket", DEFAULT_SPEED_BUCKET, MAX_SPEED_BUCKET)));
     }
 
     if (parsed.path.rfind("/api/", 0) == 0) {

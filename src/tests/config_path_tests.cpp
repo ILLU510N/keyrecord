@@ -22,7 +22,7 @@ bool expectPathEqual(
     const std::filesystem::path& expected,
     const char* message) {
     if (actual.lexically_normal() != expected.lexically_normal()) {
-        std::cerr << message << "\n期望: " << expected.string() << "\n实际: " << actual.string() << "\n";
+        std::cerr << message << "\nExpected: " << expected.string() << "\nActual: " << actual.string() << "\n";
         return false;
     }
     return true;
@@ -88,11 +88,11 @@ int main() {
     const auto expectedDbPath = expectedConfigDir / "keyrecord.db";
 
     const auto actualConfigDir = std::filesystem::path(keyrecord::getConfigDir());
-    ok = expectPathEqual(actualConfigDir, expectedConfigDir, "配置目录应位于用户主目录下的 .config/keyrecord") && ok;
-    ok = expect(std::filesystem::is_directory(expectedConfigDir), "配置目录不存在时应自动创建") && ok;
+    ok = expectPathEqual(actualConfigDir, expectedConfigDir, "Config directory should be ~/.config/keyrecord") && ok;
+    ok = expect(std::filesystem::is_directory(expectedConfigDir), "Config directory should be created automatically") && ok;
 
     const auto actualDbPath = std::filesystem::path(keyrecord::getDefaultDatabasePath());
-    ok = expectPathEqual(actualDbPath, expectedDbPath, "默认数据库文件应位于配置目录内") && ok;
+    ok = expectPathEqual(actualDbPath, expectedDbPath, "Default database file should be inside the config directory") && ok;
 
     std::filesystem::remove_all(tempHome);
     return ok ? 0 : 1;

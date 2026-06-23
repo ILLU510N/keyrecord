@@ -11,7 +11,7 @@ bool hasIndex(sqlite3* database, const char* indexName) {
     sqlite3_stmt* stmt = nullptr;
     const char* sql = "SELECT 1 FROM sqlite_master WHERE type = 'index' AND name = ? LIMIT 1";
     if (sqlite3_prepare_v2(database, sql, -1, &stmt, nullptr) != SQLITE_OK) {
-        std::cerr << "索引查询预编译失败: " << sqlite3_errmsg(database) << "\n";
+        std::cerr << "Failed to prepare index lookup: " << sqlite3_errmsg(database) << "\n";
         return false;
     }
     sqlite3_bind_text(stmt, 1, indexName, -1, SQLITE_TRANSIENT);
@@ -24,7 +24,7 @@ bool singleQuoteKeyWasInserted(sqlite3* database) {
     sqlite3_stmt* stmt = nullptr;
     const char* sql = "SELECT COUNT(*) FROM keys WHERE key_name = ?";
     if (sqlite3_prepare_v2(database, sql, -1, &stmt, nullptr) != SQLITE_OK) {
-        std::cerr << "按键查询预编译失败: " << sqlite3_errmsg(database) << "\n";
+        std::cerr << "Failed to prepare key lookup: " << sqlite3_errmsg(database) << "\n";
         return false;
     }
     sqlite3_bind_text(stmt, 1, "'", -1, SQLITE_TRANSIENT);
@@ -39,7 +39,7 @@ bool singleQuoteKeyWasInserted(sqlite3* database) {
 bool journalModeIsWal(sqlite3* database) {
     sqlite3_stmt* stmt = nullptr;
     if (sqlite3_prepare_v2(database, "PRAGMA journal_mode", -1, &stmt, nullptr) != SQLITE_OK) {
-        std::cerr << "journal_mode 查询预编译失败: " << sqlite3_errmsg(database) << "\n";
+        std::cerr << "Failed to prepare journal_mode query: " << sqlite3_errmsg(database) << "\n";
         return false;
     }
     bool isWal = false;
@@ -61,7 +61,7 @@ int main() {
 
     initKeyMap();
     if (!startWriter(dbPath.string())) {
-        std::cerr << "writer 启动失败\n";
+        std::cerr << "Failed to start writer\n";
         return 1;
     }
 
@@ -71,7 +71,7 @@ int main() {
 
     sqlite3* database = nullptr;
     if (sqlite3_open(dbPath.string().c_str(), &database) != SQLITE_OK) {
-        std::cerr << "测试数据库打开失败\n";
+        std::cerr << "Failed to open test database\n";
         return 1;
     }
 

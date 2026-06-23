@@ -2,51 +2,130 @@ const App = {
   elements: {},
   currentRange: { start: null, end: null },
   defaultRange: { start: null, end: null },
+  availableRange: { first: null, last: null },
+  topKeys: [],
+  pendingLoads: 0,
 
   async init() {
     console.log('🚀 KeyRecord 可视化应用启动中...');
     this.initFilterControls();
+    this.initTheme();
     CalendarHeatmap.init();
     KeyboardHeatmap.init();
-
-    const info = await this.loadDatabaseInfo();
-    this.configureDateRange(info);
-    this.setDateRange(this.defaultRange.start, this.defaultRange.end);
-
-    await Promise.all([
-      this.refreshRangeData(),
-      CalendarHeatmap.load()
-    ]);
 
     CalendarHeatmap.setDateSelectHandler((date) => {
       this.setDateRange(date, date);
       this.refreshRangeData();
     });
+    CalendarHeatmap.setRangeSelectHandler((range) => {
+      this.setDateRange(range.start, range.end);
+      this.refreshRangeData();
+    });
+
+    const info = await this.withLoading(() => this.loadDatabaseInfo());
+    this.configureDateRange(info);
+    this.setDateRange(this.defaultRange.start, this.defaultRange.end);
+
+    await Promise.all([
+      this.refreshRangeData(),
+      this.withLoading(() => CalendarHeatmap.load())
+    ]);
+
+    CalendarHeatmap.setBrushRange(this.currentRange.start, this.currentRange.end);
 
     console.log('✓ 应用初始化完成');
   },
 
   initFilterControls() {
+    this.elements.loadingBar = document.getElementById('loading-bar');
     this.elements.filterStart = document.getElementById('filter-start');
     this.elements.filterEnd = document.getElementById('filter-end');
     this.elements.filterApply = document.getElementById('filter-apply');
+    this.elements.filterToday = document.getElementById('filter-today');
     this.elements.filterLast7 = document.getElementById('filter-last7');
+    this.elements.filterLast30 = document.getElementById('filter-last30');
+    this.elements.filterMonth = document.getElementById('filter-month');
+    this.elements.filterAll = document.getElementById('filter-all');
     this.elements.filterStatus = document.getElementById('filter-status');
     this.elements.topKeysBody = document.getElementById('top-keys-body');
     this.elements.topKeysStatus = document.getElementById('top-keys-status');
     this.elements.topKeysRange = document.getElementById('top-keys-range');
+    this.elements.themeToggle = document.getElementById('theme-toggle');
+    this.elements.printPage = document.getElementById('print-page');
+    this.elements.exportCsv = document.getElementById('export-csv');
+    this.elements.exportJson = document.getElementById('export-json');
+    this.elements.exportPng = document.getElementById('export-png');
 
-    if (this.elements.filterApply) {
-      this.elements.filterApply.addEventListener('click', () => {
-        this.applyDateFilter();
-      });
+    this.bindClick(this.elements.filterApply, () => this.applyDateFilter());
+    this.bindClick(this.elements.filterToday, () => this.applyPresetRange('today'));
+    this.bindClick(this.elements.filterLast7, () => this.applyPresetRange('last7'));
+    this.bindClick(this.elements.filterLast30, () => this.applyPresetRange('last30'));
+    this.bindClick(this.elements.filterMonth, () => this.applyPresetRange('month'));
+    this.bindClick(this.elements.filterAll, () => this.applyPresetRange('all'));
+    this.bindClick(this.elements.themeToggle, () => this.toggleTheme());
+    this.bindClick(this.elements.printPage, () => window.print());
+    this.bindClick(this.elements.exportCsv, () => this.exportData('csv'));
+    this.bindClick(this.elements.exportJson, () => this.exportData('json'));
+    this.bindClick(this.elements.exportPng, () => KeyboardHeatmap.exportPng(this.currentRange));
+  },
+
+  bindClick(element, handler) {
+    if (element) {
+      element.addEventListener('click', handler);
     }
+  },
 
-    if (this.elements.filterLast7) {
-      this.elements.filterLast7.addEventListener('click', () => {
-        this.setDateRange(this.defaultRange.start, this.defaultRange.end);
-        this.refreshRangeData();
-      });
+  async withLoading(work) {
+    this.setLoading(true);
+    try {
+      return await work();
+    } finally {
+      this.setLoading(false);
+    }
+  },
+
+  setLoading(isLoading) {
+    this.pendingLoads += isLoading ? 1 : -1;
+    if (this.pendingLoads < 0) {
+      this.pendingLoads = 0;
+    }
+    if (this.elements.loadingBar) {
+      this.elements.loadingBar.classList.toggle('is-active', this.pendingLoads > 0);
+    }
+  },
+
+  initTheme() {
+    const storedTheme = this.readStoredTheme();
+    const preferredTheme = storedTheme || 'light';
+    this.setTheme(preferredTheme);
+  },
+
+  readStoredTheme() {
+    try {
+      return localStorage.getItem('keyrecord-theme');
+    } catch (error) {
+      console.warn('读取主题配置失败:', error);
+      return null;
+    }
+  },
+
+  setTheme(theme) {
+    const safeTheme = theme === 'dark' ? 'dark' : 'light';
+    document.body.dataset.theme = safeTheme;
+    if (this.elements.themeToggle) {
+      this.elements.themeToggle.textContent = safeTheme === 'dark' ? '☀' : '◐';
+      this.elements.themeToggle.setAttribute('aria-label', safeTheme === 'dark' ? '切换浅色主题' : '切换深色主题');
+      this.elements.themeToggle.title = safeTheme === 'dark' ? '切换浅色主题' : '切换深色主题';
+    }
+  },
+
+  toggleTheme() {
+    const nextTheme = document.body.dataset.theme === 'dark' ? 'light' : 'dark';
+    this.setTheme(nextTheme);
+    try {
+      localStorage.setItem('keyrecord-theme', nextTheme);
+    } catch (error) {
+      console.warn('保存主题配置失败:', error);
     }
   },
 
@@ -70,13 +149,17 @@ const App = {
   },
 
   configureDateRange(info) {
+    this.availableRange = {
+      first: info && info.first_date ? info.first_date : null,
+      last: info && info.last_date ? info.last_date : null
+    };
     this.defaultRange = this.getDefaultDateRange(info);
 
-    if (this.elements.filterStart && this.elements.filterEnd && info && info.first_date && info.last_date) {
-      this.elements.filterStart.min = info.first_date;
-      this.elements.filterStart.max = info.last_date;
-      this.elements.filterEnd.min = info.first_date;
-      this.elements.filterEnd.max = info.last_date;
+    if (this.elements.filterStart && this.elements.filterEnd && this.availableRange.first && this.availableRange.last) {
+      this.elements.filterStart.min = this.availableRange.first;
+      this.elements.filterStart.max = this.availableRange.last;
+      this.elements.filterEnd.min = this.availableRange.first;
+      this.elements.filterEnd.max = this.availableRange.last;
     }
   },
 
@@ -111,6 +194,57 @@ const App = {
     await this.refreshRangeData();
   },
 
+  async applyPresetRange(preset) {
+    const range = this.getPresetRange(preset);
+    if (!range) {
+      this.setFilterStatus('当前没有可用日期范围', true);
+      return;
+    }
+
+    this.setDateRange(range.start, range.end);
+    await this.refreshRangeData();
+  },
+
+  getPresetRange(preset) {
+    const today = this.todayUtcDate();
+    const lastDataDate = this.availableRange.last ? this.parseDateValue(this.availableRange.last) : null;
+    const firstDataDate = this.availableRange.first ? this.parseDateValue(this.availableRange.first) : null;
+    const referenceDate = lastDataDate || today;
+
+    if (preset === 'today') {
+      const value = this.formatDateValue(today);
+      return { start: value, end: value };
+    }
+
+    if (preset === 'all') {
+      if (!firstDataDate || !lastDataDate) {
+        return null;
+      }
+      return {
+        start: this.formatDateValue(firstDataDate),
+        end: this.formatDateValue(lastDataDate)
+      };
+    }
+
+    if (preset === 'month') {
+      const start = new Date(Date.UTC(today.getUTCFullYear(), today.getUTCMonth(), 1));
+      const end = new Date(Date.UTC(today.getUTCFullYear(), today.getUTCMonth() + 1, 0));
+      return {
+        start: this.formatDateValue(start),
+        end: this.formatDateValue(end)
+      };
+    }
+
+    const days = preset === 'last30' ? 30 : 7;
+    const startCandidate = this.addDays(referenceDate, -(days - 1));
+    const startDate = firstDataDate && firstDataDate > startCandidate ? firstDataDate : startCandidate;
+
+    return {
+      start: this.formatDateValue(startDate),
+      end: this.formatDateValue(referenceDate)
+    };
+  },
+
   async updateKeyboardHeatmap(startDate, endDate) {
     if (!this.validateDateRange(startDate, endDate)) {
       return;
@@ -128,10 +262,12 @@ const App = {
     }
 
     this.setFilterStatus('加载中...');
-    await Promise.all([
-      KeyboardHeatmap.loadKeyboardHeatmap(start, end),
-      this.loadTopKeys(start, end)
-    ]);
+    await this.withLoading(async () => {
+      await Promise.all([
+        KeyboardHeatmap.loadKeyboardHeatmap(start, end),
+        this.loadTopKeys(start, end)
+      ]);
+    });
     this.setFilterStatus('当前范围: ' + this.formatRangeLabel(start, end));
   },
 
@@ -145,11 +281,13 @@ const App = {
 
       const keys = await response.json();
       const keyRows = Array.isArray(keys) ? keys : [];
+      this.topKeys = keyRows;
       this.renderTopKeys(keyRows);
       this.setTopKeysStatus(keyRows.length > 0 ? '已加载' : '暂无数据');
       console.log('✓ Top 20 按键排行加载完成: ' + keyRows.length + ' 个按键');
     } catch (error) {
       console.error('加载 Top 20 按键排行失败:', error);
+      this.topKeys = [];
       this.renderTopKeys([]);
       this.setTopKeysStatus('加载失败: ' + error.message);
     }
@@ -230,6 +368,8 @@ const App = {
     if (this.elements.filterEnd) {
       this.elements.filterEnd.value = endDate || '';
     }
+
+    CalendarHeatmap.setBrushRange(startDate, endDate);
   },
 
   validateDateRange(startDate, endDate) {
@@ -255,6 +395,81 @@ const App = {
     }
 
     return '全部';
+  },
+
+  exportData(format) {
+    const payload = this.buildExportPayload();
+    const filenameBase = 'keyrecord_' + this.exportRangeToken();
+
+    if (format === 'json') {
+      const json = JSON.stringify(payload, null, 2);
+      this.downloadBlob(json, filenameBase + '.json', 'application/json;charset=utf-8');
+      return;
+    }
+
+    const csv = this.buildCsv(payload);
+    this.downloadBlob(csv, filenameBase + '.csv', 'text/csv;charset=utf-8');
+  },
+
+  buildExportPayload() {
+    return {
+      exported_at: new Date().toISOString(),
+      range: { ...this.currentRange },
+      top_keys: this.topKeys,
+      heatmap: KeyboardHeatmap.data,
+      daily_stats: CalendarHeatmap.data
+    };
+  },
+
+  buildCsv(payload) {
+    const rows = [
+      ['section', 'range_start', 'range_end', 'date', 'key_name', 'vk_code', 'count', 'x', 'y']
+    ];
+
+    payload.top_keys.forEach((item) => {
+      rows.push(['top_keys', payload.range.start, payload.range.end, '', item.key_name || '', item.vk_code, item.count, '', '']);
+    });
+
+    payload.heatmap.forEach((item) => {
+      rows.push(['heatmap', payload.range.start, payload.range.end, '', item.key_name || '', item.vk_code, item.count, item.x, item.y]);
+    });
+
+    payload.daily_stats.forEach((item) => {
+      rows.push(['daily_stats', '', '', item.date, '', '', item.count, '', '']);
+    });
+
+    return rows.map(row => row.map(value => this.escapeCsvValue(value)).join(',')).join('\r\n') + '\r\n';
+  },
+
+  escapeCsvValue(value) {
+    if (value === null || value === undefined) {
+      return '';
+    }
+    const text = String(value);
+    if (/[",\r\n]/.test(text)) {
+      return '"' + text.replace(/"/g, '""') + '"';
+    }
+    return text;
+  },
+
+  downloadBlob(content, filename, contentType) {
+    const blob = new Blob([content], { type: contentType });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = filename;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    URL.revokeObjectURL(url);
+  },
+
+  exportRangeToken() {
+    const { start, end } = this.currentRange;
+    if (start && end) {
+      return start === end ? start : start + '_' + end;
+    }
+    return 'all';
   },
 
   setFilterStatus(message, isError = false) {

@@ -35,18 +35,31 @@ bool execSql(sqlite3* database, const char* sql) {
 }
 
 bool seedDatabase(sqlite3* database) {
-    return execSql(database,
-                   "CREATE TABLE keys("
-                   "id INTEGER PRIMARY KEY AUTOINCREMENT,"
-                   "timestamp INTEGER,"
-                   "date TEXT,"
-                   "hour INTEGER,"
-                   "vk_code INTEGER,"
-                   "key_name TEXT);"
-                   "INSERT INTO keys(timestamp,date,hour,vk_code,key_name) VALUES"
-                   "(1767225600,'2026-01-01',0,65,'A'),"
-                   "(1767225601,'2026-01-01',0,65,'A'),"
-                   "(1767312000,'2026-01-02',0,66,'B');");
+    if (!execSql(database,
+                 "CREATE TABLE keys("
+                 "id INTEGER PRIMARY KEY AUTOINCREMENT,"
+                 "timestamp INTEGER,"
+                 "date TEXT,"
+                 "hour INTEGER,"
+                 "vk_code INTEGER,"
+                 "key_name TEXT);"
+                 "INSERT INTO keys(timestamp,date,hour,vk_code,key_name) VALUES"
+                 "(1767225600,'2026-01-01',0,65,'A'),"
+                 "(1767225601,'2026-01-01',0,65,'A'),"
+                 "(1767312000,'2026-01-02',5,66,'B');")) {
+        return false;
+    }
+
+    for (int i = 0; i < 105; ++i) {
+        const std::string sql =
+            "INSERT INTO keys(timestamp,date,hour,vk_code,key_name) VALUES(1767398400,'2026-01-03',0," +
+            std::to_string(1000 + i) + ",'Bulk" + std::to_string(i) + "');";
+        if (!execSql(database, sql.c_str())) {
+            return false;
+        }
+    }
+
+    return true;
 }
 
 bool hasHeader(const keyrecord::HttpResponse& response, std::string_view name, std::string_view value) {
@@ -56,6 +69,19 @@ bool hasHeader(const keyrecord::HttpResponse& response, std::string_view name, s
         }
     }
     return false;
+}
+
+int countOccurrences(std::string_view text, std::string_view needle) {
+    int count = 0;
+    size_t offset = 0;
+    while (true) {
+        const size_t found = text.find(needle, offset);
+        if (found == std::string_view::npos) {
+            return count;
+        }
+        ++count;
+        offset = found + needle.size();
+    }
 }
 
 } // namespace
@@ -89,6 +115,84 @@ int main() {
     ok = expectEqual(keys.body,
                      "[{\"key_name\":\"A\",\"vk_code\":65,\"count\":2}]",
                      "keys route did not parse limit query correctly") &&
+         ok;
+
+    const auto cappedKeys = keyrecord::handleHttpRequest("GET", "/api/keys?limit=100000", database);
+    ok = expect(cappedKeys.status == 200, "keys route should accept a large positive limit by capping it") && ok;
+    ok = expect(countOccurrences(cappedKeys.body, "\"key_name\"") == 100, "keys route should cap limit to 100 rows") &&
+         ok;
+
+    const auto hourlyStats = keyrecord::handleHttpRequest("GET", "/api/hourly-stats?date=2026-01-02", database);
+    ok = expectEqual(hourlyStats.body,
+                     "[{\"hour\":5,\"count\":1}]",
+                     "hourly stats route did not parse date query correctly") &&
+         ok;
+
+    const auto missingHourlyDate = keyrecord::handleHttpRequest("GET", "/api/hourly-stats", database);
+    ok = expect(missingHourlyDate.status == 400, "hourly stats should require a date query") && ok;
+    ok = expectEqual(missingHourlyDate.body, "{\"error\":\"date is required\"}", "missing date error body incorrect") &&
+         ok;
+
+    const auto hourlyHeatmap =
+        keyrecord::handleHttpRequest("GET", "/api/hourly-heatmap?start=2026-01-01&end=2026-01-01", database);
+    ok = expectEqual(hourlyHeatmap.body,
+                     "[{\"weekday\":4,\"hour\":0,\"count\":2}]",
+                     "hourly heatmap route did not aggregate weekday/hour correctly") &&
+         ok;
+
+    const auto regionStats =
+        keyrecord::handleHttpRequest("GET", "/api/region-stats?start=2026-01-01&end=2026-01-01", database);
+    ok = expectEqual(regionStats.body,
+                     "[{\"region\":\"letters\",\"count\":2},{\"region\":\"digits\",\"count\":0},"
+                     "{\"region\":\"numpad\",\"count\":0},{\"region\":\"function\",\"count\":0},"
+                     "{\"region\":\"navigation\",\"count\":0},{\"region\":\"modifiers\",\"count\":0},"
+                     "{\"region\":\"control\",\"count\":0},{\"region\":\"punctuation\",\"count\":0},"
+                     "{\"region\":\"other\",\"count\":0}]",
+                     "region stats route mismatch") &&
+         ok;
+
+    const auto handStats =
+        keyrecord::handleHttpRequest("GET", "/api/hand-stats?start=2026-01-01&end=2026-01-01", database);
+    ok = expectEqual(handStats.body,
+                     "[{\"hand\":\"left\",\"count\":2},{\"hand\":\"right\",\"count\":0},"
+                     "{\"hand\":\"both\",\"count\":0},{\"hand\":\"unknown\",\"count\":0}]",
+                     "hand stats route mismatch") &&
+         ok;
+
+    const auto timeline = keyrecord::handleHttpRequest("GET", "/api/timeline?date=2026-01-02", database);
+    ok = expectEqual(timeline.body,
+                     "[{\"ts\":1767312000,\"vk_code\":66,\"key_name\":\"B\"}]",
+                     "timeline route mismatch") &&
+         ok;
+
+    const auto speed = keyrecord::handleHttpRequest("GET", "/api/speed?date=2026-01-01&bucket=5", database);
+    ok = expectEqual(speed.body, "[{\"minute\":0,\"count\":2}]", "speed route mismatch") && ok;
+
+    const auto combos = keyrecord::handleHttpRequest("GET", "/api/combos?start=2026-01-01&end=2026-01-01", database);
+    ok = expectEqual(combos.body, "[]", "combos route should be empty without modifier sequences") && ok;
+
+    const auto missingTimelineDate = keyrecord::handleHttpRequest("GET", "/api/timeline", database);
+    ok = expect(missingTimelineDate.status == 400, "timeline should require a date query") && ok;
+
+    const auto invalidDate = keyrecord::handleHttpRequest("GET", "/api/heatmap?date=2026-02-30", database);
+    ok = expect(invalidDate.status == 400, "invalid date should be rejected") && ok;
+    ok = expectEqual(invalidDate.body, "{\"error\":\"invalid date format\"}", "invalid date error body incorrect") && ok;
+
+    const auto incompleteRange = keyrecord::handleHttpRequest("GET", "/api/keys?start=2026-01-01", database);
+    ok = expect(incompleteRange.status == 400, "incomplete date range should be rejected") && ok;
+    ok = expectEqual(
+             incompleteRange.body,
+             "{\"error\":\"start and end must be provided together\"}",
+             "incomplete range error body incorrect") &&
+         ok;
+
+    const auto reversedRange =
+        keyrecord::handleHttpRequest("GET", "/api/heatmap?start=2026-01-02&end=2026-01-01", database);
+    ok = expect(reversedRange.status == 400, "reversed date range should be rejected") && ok;
+    ok = expectEqual(
+             reversedRange.body,
+             "{\"error\":\"start date must not be later than end date\"}",
+             "reversed range error body incorrect") &&
          ok;
 
     const auto missing = keyrecord::handleHttpRequest("GET", "/api/missing", database);

@@ -9,9 +9,16 @@
   <script src="vendor/heatmap.min.js"></script>
 </head>
 <body>
+  <div id="loading-bar" class="loading-bar" aria-hidden="true"><span></span></div>
   <div class="container">
     <header>
-      <h1>⌨️ KeyRecord - 按键统计可视化</h1>
+      <div class="header-top">
+        <h1>⌨️ KeyRecord - 按键统计可视化</h1>
+        <div class="header-actions" aria-label="页面操作">
+          <button id="theme-toggle" class="icon-button" type="button" title="切换深色/浅色主题" aria-label="切换深色/浅色主题">◐</button>
+          <button id="print-page" class="icon-button" type="button" title="打印" aria-label="打印">⎙</button>
+        </div>
+      </div>
       <div id="db-info" class="db-info">
         <span class="info-item">总按键数: <strong id="total-keys">-</strong></span>
         <span class="info-item">数据范围: <strong id="data-range">-</strong></span>
@@ -29,19 +36,40 @@
           <input id="filter-end" type="date" aria-label="筛选结束日期">
         </label>
         <button id="filter-apply" class="primary-button" type="button">应用范围</button>
-        <button id="filter-last7" class="secondary-button" type="button">最近 7 天</button>
+        <div class="range-buttons" aria-label="快捷日期范围">
+          <button id="filter-today" class="secondary-button" type="button">今天</button>
+          <button id="filter-last7" class="secondary-button" type="button">最近 7 天</button>
+          <button id="filter-last30" class="secondary-button" type="button">最近 30 天</button>
+          <button id="filter-month" class="secondary-button" type="button">本月</button>
+          <button id="filter-all" class="secondary-button" type="button">全部</button>
+        </div>
         <span id="filter-status" class="filter-status" aria-live="polite">等待加载</span>
+      </div>
+      <div id="date-brush" class="date-brush" aria-label="D3 日期范围滑块"></div>
+      <div class="export-toolbar" aria-label="数据导出">
+        <button id="export-csv" class="secondary-button" type="button">导出 CSV</button>
+        <button id="export-json" class="secondary-button" type="button">导出 JSON</button>
       </div>
     </section>
     <section id="heatmap-section" class="section">
-      <h2>键盘热力图</h2>
+      <div class="section-title-row">
+        <h2>键盘热力图</h2>
+        <div class="keyboard-tools" aria-label="键盘热力图操作">
+          <button id="keyboard-zoom-out" class="icon-button" type="button" title="缩小" aria-label="缩小">−</button>
+          <button id="keyboard-zoom-reset" class="icon-button" type="button" title="重置缩放" aria-label="重置缩放">↺</button>
+          <button id="keyboard-zoom-in" class="icon-button" type="button" title="放大" aria-label="放大">+</button>
+          <button id="export-png" class="secondary-button" type="button">导出 PNG</button>
+        </div>
+      </div>
       <div class="heatmap-summary">
         <span>范围: <strong id="keyboard-range">-</strong></span>
         <span>可映射按键: <strong id="keyboard-total">0</strong></span>
         <span id="keyboard-status" class="status-text">等待加载</span>
       </div>
-      <div class="keyboard-shell">
-        <div id="keyboard-heatmap" aria-label="键盘热力图"></div>
+      <div id="keyboard-viewport" class="keyboard-shell">
+        <div id="keyboard-stage" class="keyboard-stage">
+          <div id="keyboard-heatmap" aria-label="键盘热力图"></div>
+        </div>
       </div>
       <div class="heatmap-legend" aria-hidden="true">
         <span>低频</span>
@@ -74,6 +102,111 @@
         </table>
       </div>
     </section>
+    <section id="analysis-section" class="section" aria-labelledby="analysis-title">
+      <div class="section-title-row">
+        <h2 id="analysis-title">🔬 高级分析</h2>
+        <div class="analysis-tools" aria-label="高级分析操作">
+          <label class="live-toggle">
+            <input id="live-toggle" type="checkbox">
+            <span>实时监控</span>
+          </label>
+          <span id="live-status" class="status-text">已停止</span>
+        </div>
+      </div>
+
+      <div class="analysis-grid">
+        <div class="analysis-card">
+          <h3>小时级热力图（星期 × 小时）</h3>
+          <div id="hourly-heatmap" class="hourly-heatmap" aria-label="星期与小时热力图"></div>
+        </div>
+
+        <div class="analysis-card">
+          <h3>输入速度曲线</h3>
+          <div class="analysis-subhead">
+            <span>聚焦日期: <strong id="speed-date">-</strong></span>
+            <span id="speed-status" class="status-text">等待加载</span>
+          </div>
+          <div id="speed-chart" class="line-chart" aria-label="输入速度曲线"></div>
+        </div>
+
+        <div class="analysis-card">
+          <h3>键盘分区统计</h3>
+          <div id="region-chart" class="bar-chart" aria-label="键盘分区统计"></div>
+        </div>
+
+        <div class="analysis-card">
+          <h3>左右手使用对比</h3>
+          <div id="hand-chart" class="hand-compare" aria-label="左右手使用对比"></div>
+        </div>
+
+        <div class="analysis-card">
+          <h3>多键组合统计</h3>
+          <div class="table-scroll">
+            <table class="combo-table">
+              <thead>
+                <tr><th scope="col">组合</th><th scope="col">次数</th></tr>
+              </thead>
+              <tbody id="combo-body">
+                <tr><td colspan="2" class="empty-cell">等待加载</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <div class="analysis-card">
+          <h3>按键时序动画回放</h3>
+          <div class="analysis-subhead">
+            <span>回放日期: <strong id="timeline-date">-</strong></span>
+            <span id="timeline-status" class="status-text">等待加载</span>
+          </div>
+          <div class="timeline-controls" aria-label="回放控制">
+            <button id="timeline-play" class="secondary-button" type="button">▶ 播放</button>
+            <button id="timeline-stop" class="secondary-button" type="button">■ 停止</button>
+            <label class="speed-field">
+              速度
+              <select id="timeline-speed">
+                <option value="1">1×</option>
+                <option value="2">2×</option>
+                <option value="4" selected>4×</option>
+                <option value="8">8×</option>
+                <option value="16">16×</option>
+              </select>
+            </label>
+            <span id="timeline-current" class="timeline-current">—</span>
+          </div>
+          <div class="timeline-progress"><span id="timeline-progress-bar"></span></div>
+          <p class="analysis-hint">在上方键盘热力图区域高亮显示回放按键。</p>
+        </div>
+      </div>
+
+      <div class="analysis-card compare-card">
+        <h3>数据对比</h3>
+        <div class="compare-controls" aria-label="数据对比范围选择">
+          <div class="compare-range">
+            <span class="compare-label">范围 A</span>
+            <input id="compare-a-start" type="date" aria-label="范围 A 开始">
+            <input id="compare-a-end" type="date" aria-label="范围 A 结束">
+          </div>
+          <div class="compare-range">
+            <span class="compare-label">范围 B</span>
+            <input id="compare-b-start" type="date" aria-label="范围 B 开始">
+            <input id="compare-b-end" type="date" aria-label="范围 B 结束">
+          </div>
+          <button id="compare-run" class="primary-button" type="button">对比</button>
+          <span id="compare-status" class="status-text">选择两个范围后点击对比</span>
+        </div>
+        <div class="table-scroll">
+          <table class="compare-table">
+            <thead>
+              <tr><th scope="col">指标</th><th scope="col">范围 A</th><th scope="col">范围 B</th><th scope="col">差异</th></tr>
+            </thead>
+            <tbody id="compare-body">
+              <tr><td colspan="4" class="empty-cell">尚未对比</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </section>
     <section id="calendar-section" class="section">
       <h2>📊 每日按键统计</h2>
       <div id="calendar-heatmap"></div>
@@ -82,6 +215,7 @@
   <footer><p>KeyRecord Visualization</p></footer>
   <script src="js/calendar.js"></script>
   <script src="js/keyboard.js"></script>
+  <script src="js/analysis.js"></script>
   <script src="js/main.js"></script>
 </body>
 </html>

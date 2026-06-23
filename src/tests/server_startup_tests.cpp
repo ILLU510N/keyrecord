@@ -17,7 +17,7 @@ bool expect(bool condition, const char* message) {
 
 bool expectEqual(const std::string& actual, const std::string& expected, const char* message) {
     if (actual != expected) {
-        std::cerr << message << "\n期望: " << expected << "\n实际: " << actual << "\n";
+        std::cerr << message << "\nExpected: " << expected << "\nActual: " << actual << "\n";
         return false;
     }
     return true;
@@ -25,7 +25,7 @@ bool expectEqual(const std::string& actual, const std::string& expected, const c
 
 bool expectContains(const std::string& actual, const char* expected, const char* message) {
     if (actual.find(expected) == std::string::npos) {
-        std::cerr << message << "\n缺少: " << expected << "\n";
+        std::cerr << message << "\nMissing: " << expected << "\n";
         return false;
     }
     return true;
@@ -35,7 +35,7 @@ bool execSql(sqlite3* database, const char* sql) {
     char* error = nullptr;
     const int rc = sqlite3_exec(database, sql, nullptr, nullptr, &error);
     if (rc != SQLITE_OK) {
-        std::cerr << "SQL 执行失败: " << (error ? error : sqlite3_errmsg(database)) << "\n";
+        std::cerr << "SQL execution failed: " << (error ? error : sqlite3_errmsg(database)) << "\n";
         sqlite3_free(error);
         return false;
     }
@@ -70,7 +70,7 @@ int main() {
     std::filesystem::remove(dbPath);
     std::filesystem::remove(missingPath);
 
-    ok = expect(createWritableFixture(dbPath), "测试数据库创建失败") && ok;
+    ok = expect(createWritableFixture(dbPath), "Failed to create test database") && ok;
 
     keyrecord::ServerConfig config;
     config.address = "127.0.0.1";
@@ -80,22 +80,22 @@ int main() {
     std::string errorMessage;
     {
         auto startup = keyrecord::prepareServerStartup(config, &errorMessage);
-        ok = expect(startup.has_value(), "已有数据库应能准备 server startup") && ok;
-        ok = expect(errorMessage.empty(), "成功准备 server startup 时错误信息应为空") && ok;
+        ok = expect(startup.has_value(), "Existing database should prepare server startup") && ok;
+        ok = expect(errorMessage.empty(), "Error message should be empty after successful server startup preparation") && ok;
         if (startup) {
-            ok = expectContains(startup->banner, "http://127.0.0.1:3456", "启动信息缺少监听地址") && ok;
-            ok = expectContains(startup->banner, config.dbPath.c_str(), "启动信息缺少数据库路径") && ok;
+            ok = expectContains(startup->banner, "http://127.0.0.1:3456", "Startup banner should include the listen address") && ok;
+            ok = expectContains(startup->banner, config.dbPath.c_str(), "Startup banner should include the database path") && ok;
         }
     }
 
     config.dbPath = missingPath.string();
     errorMessage.clear();
     auto missingStartup = keyrecord::prepareServerStartup(config, &errorMessage);
-    ok = expect(!missingStartup.has_value(), "不存在数据库不应准备 server startup") && ok;
-    ok = expect(!errorMessage.empty(), "数据库打开失败时应返回错误信息") && ok;
+    ok = expect(!missingStartup.has_value(), "Missing database should not prepare server startup") && ok;
+    ok = expect(!errorMessage.empty(), "Failed database open should return an error message") && ok;
     ok = expectEqual(keyrecord::buildServerStartupBanner(config),
-                     "KeyRecord 可视化服务启动中\n监听地址: http://127.0.0.1:3456\n数据库路径: " + missingPath.string() + "\n",
-                     "启动信息格式不匹配") &&
+                     "KeyRecord visualization server starting\nListen address: http://127.0.0.1:3456\nDatabase path: " + missingPath.string() + "\n",
+                     "Startup banner format mismatch") &&
          ok;
 
     std::filesystem::remove(dbPath);

@@ -89,9 +89,9 @@ pwsh.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -File .\build.ps1
 脚本默认执行：
 
 - CMake 配置到 `build/`
-- 编译 `Release`
-- 生成 `build/keyrecord-windows-x64.zip`，包含 `keyrecord.exe`、可视化服务端 `keyrecord_server.exe` 和运行所需 DLL
-- 编译并执行 `Debug` 测试
+- 构建 `Release` 下的 `keyrecord_release_package`
+- 生成 `build/keyrecord-windows-x64.zip`，包含 `keyrecord.exe`、运行所需 DLL，以及在启用 Boost.Beast/Asio 时一并包含 `keyrecord_server.exe`
+- 构建 `Debug` 下的 `keyrecord_debug_tests` 并执行 `ctest`
 
 仅构建、不跑测试：
 
@@ -109,7 +109,7 @@ pwsh.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -File .\build.ps1 -BoostIncl
 
 ```powershell
 cmake -B build
-cmake --build build --config Release
+cmake --build build --config Release --target keyrecord_release_package
 ```
 
 或使用 MSBuild：
@@ -120,7 +120,7 @@ MSBuild.exe build\keyrecord.vcxproj /p:Configuration=Release /p:Platform=x64
 ## 测试
 
 ```powershell
-cmake --build build --config Debug --target keyrecord_tests config_path_tests embedded_resources_tests api_queries_tests http_router_tests visualization_service_tests server_bootstrap_tests server_startup_tests readonly_database_tests
+cmake --build build --config Debug --target keyrecord_debug_tests
 ctest --test-dir build -C Debug --output-on-failure
 ```
 
