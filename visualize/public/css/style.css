@@ -8,17 +8,43 @@ header h1 { font-size: 2.5em; color: #4a90e2; margin-bottom: 20px; }
 .info-item strong { color: #2c3e50; font-size: 1.2em; }
 .section { background: #fff; padding: 30px; border-radius: 12px; box-shadow: 0 2px 8px rgba(0,0,0,0.1); margin-bottom: 30px; }
 .section h2 { font-size: 1.8em; margin-bottom: 20px; color: #2c3e50; border-bottom: 3px solid #4a90e2; padding-bottom: 10px; }
+.filter-panel { display: flex; align-items: flex-end; gap: 14px; flex-wrap: wrap; }
+.date-field { display: grid; gap: 6px; min-width: 170px; color: #5f6f82; font-size: 0.92em; font-weight: 600; }
+.date-field input { height: 40px; border: 1px solid #cbd6e2; border-radius: 6px; padding: 0 12px; color: #172033; background: #fbfdff; font: 600 14px/1.2 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+.date-field input:focus { outline: 2px solid rgba(74,144,226,0.22); border-color: #4a90e2; }
+.primary-button, .secondary-button { height: 40px; border-radius: 6px; padding: 0 16px; font-weight: 700; cursor: pointer; transition: border-color 0.15s ease, background 0.15s ease, transform 0.15s ease; }
+.primary-button { border: 1px solid #2f7fd7; background: #4a90e2; color: #fff; box-shadow: 0 6px 14px rgba(74,144,226,0.22); }
+.secondary-button { border: 1px solid #c5d2df; background: #f8fafc; color: #2c3e50; }
+.primary-button:hover, .secondary-button:hover { transform: translateY(-1px); }
+.filter-status { min-height: 40px; display: inline-flex; align-items: center; color: #4a6278; background: #eef5fd; border: 1px solid #d8e7f7; border-radius: 999px; padding: 0 14px; font-size: 0.92em; }
+.filter-status.is-error { color: #b91c1c; background: #fef2f2; border-color: #fecaca; }
 .heatmap-summary { display: flex; align-items: center; gap: 24px; flex-wrap: wrap; margin-bottom: 18px; color: #5f6f82; }
 .heatmap-summary strong { color: #172033; }
 .status-text { color: #4a6278; }
 .keyboard-shell { overflow-x: auto; padding: 12px 0 8px; }
-#keyboard-heatmap { position: relative; width: 1000px; height: 410px; margin: 0 auto; border: 1px solid #ccd6e3; border-radius: 8px; background: linear-gradient(180deg, #f8fafc 0%, #edf3f8 100%); box-shadow: inset 0 1px 0 rgba(255,255,255,0.9); }
+#keyboard-heatmap { position: relative; width: 1400px; height: 410px; margin: 0 auto; border: 1px solid #ccd6e3; border-radius: 8px; background: linear-gradient(180deg, #f8fafc 0%, #edf3f8 100%); box-shadow: inset 0 1px 0 rgba(255,255,255,0.9); }
 .keyboard-key { --key-heat: 0; position: absolute; z-index: 1; display: flex; align-items: center; justify-content: center; border: 1px solid #b8c5d4; border-radius: 6px; background: linear-gradient(180deg, rgba(255,255,255,0.94), rgba(224,232,241,0.94)); color: #26384d; font: 600 13px/1.2 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; cursor: default; box-shadow: 0 2px 4px rgba(28,45,64,0.12); transition: border-color 0.15s ease, box-shadow 0.15s ease, transform 0.15s ease; }
 .keyboard-key.has-heat { border-color: rgba(239,68,68,0.55); box-shadow: 0 0 0 1px rgba(239,68,68,calc(var(--key-heat) * 0.35)), 0 7px 16px rgba(239,68,68,calc(var(--key-heat) * 0.2)); }
 .keyboard-key:hover { z-index: 3; border-color: #172033; transform: translateY(-1px); }
 .heatmap-canvas { position: absolute !important; inset: 0; z-index: 2; pointer-events: none; }
 .heatmap-legend { display: flex; align-items: center; justify-content: flex-end; gap: 10px; margin-top: 14px; color: #718096; font-size: 0.9em; }
 .legend-gradient { width: 180px; height: 10px; border-radius: 999px; background: linear-gradient(90deg, #3b82f6, #22c55e, #facc15, #ef4444); box-shadow: inset 0 0 0 1px rgba(0,0,0,0.08); }
+.table-summary { display: flex; align-items: center; gap: 24px; flex-wrap: wrap; margin-bottom: 14px; color: #5f6f82; }
+.table-summary strong { color: #172033; }
+.table-scroll { overflow-x: auto; border: 1px solid #d8e1eb; border-radius: 8px; }
+.top-keys-table { width: 100%; min-width: 680px; border-collapse: collapse; background: #fff; }
+.top-keys-table th, .top-keys-table td { padding: 12px 14px; border-bottom: 1px solid #edf2f7; text-align: left; vertical-align: middle; }
+.top-keys-table th { background: #f8fafc; color: #52657a; font-size: 0.84em; letter-spacing: 0.03em; text-transform: uppercase; }
+.top-keys-table tbody tr:hover { background: #f8fbff; }
+.top-keys-table tbody tr:last-child td { border-bottom: 0; }
+.rank-cell { width: 72px; color: #4a90e2; font-weight: 800; }
+.key-name-cell { color: #172033; font-weight: 700; }
+.code-cell { color: #62748a; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+.count-cell { color: #172033; font-weight: 700; text-align: right; }
+.ratio-cell { min-width: 150px; display: flex; align-items: center; gap: 10px; color: #4a6278; }
+.ratio-bar { display: inline-block; min-width: 4px; max-width: 100px; height: 8px; border-radius: 999px; background: linear-gradient(90deg, #4a90e2, #22c55e); }
+.ratio-text { min-width: 42px; font-variant-numeric: tabular-nums; }
+.empty-cell { color: #7f8c8d; text-align: center; padding: 28px 14px !important; }
 #calendar-heatmap { min-height: 200px; overflow-x: auto; padding: 20px 0; }
 .day { cursor: pointer; transition: all 0.2s; }
 .day:hover { stroke: #2c3e50; stroke-width: 2px; }
@@ -26,3 +52,13 @@ header h1 { font-size: 2.5em; color: #4a90e2; margin-bottom: 20px; }
 .month-label { font-size: 14px; font-weight: 600; fill: #2c3e50; }
 .tooltip { position: absolute; padding: 10px; background: rgba(0,0,0,0.8); color: white; border-radius: 6px; font-size: 0.9em; pointer-events: none; z-index: 1000; white-space: nowrap; }
 footer { text-align: center; padding: 30px; color: #7f8c8d; font-size: 0.9em; }
+
+@media (max-width: 720px) {
+  body { padding: 12px; }
+  header, .section { padding: 20px; }
+  header h1 { font-size: 1.8em; }
+  .db-info { gap: 16px; }
+  .filter-panel { align-items: stretch; }
+  .date-field, .primary-button, .secondary-button, .filter-status { width: 100%; }
+  .filter-status { justify-content: center; border-radius: 6px; }
+}

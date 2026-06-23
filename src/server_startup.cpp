@@ -5,9 +5,9 @@
 namespace keyrecord {
 
 std::string buildServerStartupBanner(const ServerConfig& config) {
-    std::string banner = "KeyRecord 可视化服务启动中\n";
-    banner += "监听地址: http://" + config.address + ":" + std::to_string(config.port) + "\n";
-    banner += "数据库路径: " + config.dbPath + "\n";
+    std::string banner = "KeyRecord visualization server starting\n";
+    banner += "Listen address: http://" + config.address + ":" + std::to_string(config.port) + "\n";
+    banner += "Database path: " + config.dbPath + "\n";
     return banner;
 }
 

@@ -10,7 +10,7 @@ param(
 
     [string]$BoostIncludeDir,
     [string]$Generator,
-    [switch]$SkipTests
+    [bool]$SkipTests = $true
 )
 
 $ErrorActionPreference = "Stop"

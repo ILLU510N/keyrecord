@@ -202,6 +202,13 @@ endif()
 copy_sqlite_dll(api_queries_tests)
 add_test(NAME api_queries_tests COMMAND api_queries_tests)
 
+add_executable(keyboard_layout_tests src/tests/keyboard_layout_tests.cpp)
+target_link_libraries(keyboard_layout_tests PRIVATE keyrecord_visualization_core)
+if(MSVC)
+    target_compile_options(keyboard_layout_tests PRIVATE /utf-8)
+endif()
+add_test(NAME keyboard_layout_tests COMMAND keyboard_layout_tests)
+
 add_executable(http_router_tests src/tests/http_router_tests.cpp)
 target_link_libraries(http_router_tests PRIVATE keyrecord_http)
 if(MSVC)
@@ -233,6 +240,21 @@ if(MSVC)
 endif()
 copy_sqlite_dll(server_startup_tests)
 add_test(NAME server_startup_tests COMMAND server_startup_tests)
+
+if(KEYRECORD_BOOST_INCLUDE_DIR AND EXISTS "${KEYRECORD_BOOST_INCLUDE_DIR}/boost/beast.hpp")
+    add_executable(server_response_adapter_tests
+        src/tests/server_response_adapter_tests.cpp
+        src/server_response_adapter.cpp
+    )
+    target_include_directories(server_response_adapter_tests PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/src
+        ${KEYRECORD_BOOST_INCLUDE_DIR}
+    )
+    if(MSVC)
+        target_compile_options(server_response_adapter_tests PRIVATE /utf-8)
+    endif()
+    add_test(NAME server_response_adapter_tests COMMAND server_response_adapter_tests)
+endif()
 
 add_executable(readonly_database_tests src/tests/readonly_database_tests.cpp)
 target_link_libraries(readonly_database_tests PRIVATE keyrecord_visualization_core)

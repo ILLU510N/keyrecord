@@ -17,7 +17,7 @@ bool expect(bool condition, const char* message) {
 
 bool expectEqual(const std::string& actual, const std::string& expected, const char* message) {
     if (actual != expected) {
-        std::cerr << message << "\n期望: " << expected << "\n实际: " << actual << "\n";
+        std::cerr << message << "\nexpected: " << expected << "\nactual: " << actual << "\n";
         return false;
     }
     return true;
@@ -27,7 +27,7 @@ bool execSql(sqlite3* database, const char* sql) {
     char* error = nullptr;
     const int rc = sqlite3_exec(database, sql, nullptr, nullptr, &error);
     if (rc != SQLITE_OK) {
-        std::cerr << "SQL 执行失败: " << (error ? error : sqlite3_errmsg(database)) << "\n";
+        std::cerr << "SQL exec failed: " << (error ? error : sqlite3_errmsg(database)) << "\n";
         sqlite3_free(error);
         return false;
     }
@@ -66,44 +66,44 @@ int main() {
 
     sqlite3* database = nullptr;
     if (sqlite3_open(dbPath.string().c_str(), &database) != SQLITE_OK) {
-        std::cerr << "测试数据库打开失败\n";
+        std::cerr << "test database open failed\n";
         return 1;
     }
 
     bool ok = seedDatabase(database);
 
     const auto index = keyrecord::handleHttpRequest("GET", "/", database);
-    ok = expect(index.status == 200, "首页状态码应为 200") && ok;
-    ok = expect(index.contentType == "text/html; charset=utf-8", "首页 Content-Type 错误") && ok;
-    ok = expect(index.body.find("KeyRecord") != std::string::npos, "首页内容缺少 KeyRecord") && ok;
-    ok = expect(hasHeader(index, "Access-Control-Allow-Origin", "*"), "首页响应缺少 CORS 头") && ok;
+    ok = expect(index.status == 200, "index status code should be 200") && ok;
+    ok = expect(index.contentType == "text/html; charset=utf-8", "index Content-Type incorrect") && ok;
+    ok = expect(index.body.find("KeyRecord") != std::string::npos, "index body missing KeyRecord") && ok;
+    ok = expect(hasHeader(index, "Access-Control-Allow-Origin", "*"), "index response missing CORS header") && ok;
 
     const auto heatmap = keyrecord::handleHttpRequest("GET", "/api/heatmap?start=2026-01-02&end=2026-01-02", database);
     ok = expectEqual(heatmap.body,
                      "[{\"vk_code\":66,\"key_name\":\"B\",\"count\":1,\"x\":435,\"y\":285}]",
-                     "heatmap 路由没有正确解析 start/end query") &&
+                     "heatmap route did not parse start/end query correctly") &&
          ok;
-    ok = expect(hasHeader(heatmap, "Access-Control-Allow-Origin", "*"), "API 响应缺少 CORS 头") && ok;
+    ok = expect(hasHeader(heatmap, "Access-Control-Allow-Origin", "*"), "API response missing CORS header") && ok;
 
     const auto keys = keyrecord::handleHttpRequest("GET", "/api/keys?limit=1", database);
     ok = expectEqual(keys.body,
                      "[{\"key_name\":\"A\",\"vk_code\":65,\"count\":2}]",
-                     "keys 路由没有正确解析 limit query") &&
+                     "keys route did not parse limit query correctly") &&
          ok;
 
     const auto missing = keyrecord::handleHttpRequest("GET", "/api/missing", database);
-    ok = expect(missing.status == 404, "未知 API 状态码应为 404") && ok;
-    ok = expectEqual(missing.body, "{\"error\":\"not found\"}", "未知 API 响应体错误") && ok;
+    ok = expect(missing.status == 404, "unknown API status code should be 404") && ok;
+    ok = expectEqual(missing.body, "{\"error\":\"not found\"}", "unknown API response body incorrect") && ok;
 
     const auto post = keyrecord::handleHttpRequest("POST", "/api/info", database);
-    ok = expect(post.status == 405, "非 GET 方法状态码应为 405") && ok;
-    ok = expect(hasHeader(post, "Allow", "GET, OPTIONS"), "405 响应缺少完整 Allow 头") && ok;
+    ok = expect(post.status == 405, "non-GET method status code should be 405") && ok;
+    ok = expect(hasHeader(post, "Allow", "GET, OPTIONS"), "405 response missing complete Allow header") && ok;
 
     const auto options = keyrecord::handleHttpRequest("OPTIONS", "/api/info", database);
-    ok = expect(options.status == 204, "OPTIONS 预检状态码应为 204") && ok;
-    ok = expect(options.body.empty(), "OPTIONS 预检响应体应为空") && ok;
-    ok = expect(hasHeader(options, "Access-Control-Allow-Origin", "*"), "OPTIONS 响应缺少 CORS Origin 头") && ok;
-    ok = expect(hasHeader(options, "Access-Control-Allow-Methods", "GET, OPTIONS"), "OPTIONS 响应缺少允许方法头") && ok;
+    ok = expect(options.status == 204, "OPTIONS preflight status code should be 204") && ok;
+    ok = expect(options.body.empty(), "OPTIONS preflight response body should be empty") && ok;
+    ok = expect(hasHeader(options, "Access-Control-Allow-Origin", "*"), "OPTIONS response missing CORS Origin header") && ok;
+    ok = expect(hasHeader(options, "Access-Control-Allow-Methods", "GET, OPTIONS"), "OPTIONS response missing allowed methods header") && ok;
 
     sqlite3_close(database);
     std::filesystem::remove(dbPath);

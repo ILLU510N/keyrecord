@@ -20,7 +20,7 @@ namespace net = boost::asio;
 using tcp = net::ip::tcp;
 
 void logServerError(std::string_view stage, const beast::error_code& error) {
-    std::cerr << "server " << stage << " 失败: " << error.message() << "\n";
+    std::cerr << "server " << stage << " failed: " << error.message() << "\n";
 }
 
 void doSession(tcp::socket socket, VisualizationService& service) {

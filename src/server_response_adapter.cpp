@@ -27,7 +27,8 @@ boost::beast::http::response<boost::beast::http::string_body> toBeastResponse(
     };
     beastResponse.set(http::field::server, BOOST_BEAST_VERSION_STRING);
     beastResponse.set(http::field::content_type, response.contentType);
-    beastResponse.keep_alive(keepAlive);
+    // 当前服务器按单线程同步 accept 处理连接；关闭 keep-alive 才能及时接受后续 CSS/JS/API 请求。
+    beastResponse.keep_alive(false);
     applyHeaders(response, beastResponse);
     beastResponse.body() = response.body;
     beastResponse.prepare_payload();

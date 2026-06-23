@@ -8,14 +8,14 @@ int main(int argc, char* argv[]) {
     std::string errorMessage;
     auto config = keyrecord::buildServerConfig(argc, argv, &errorMessage);
     if (!config) {
-        std::cerr << "服务端启动参数错误: " << errorMessage << "\n";
+        std::cerr << "Server startup argument error: " << errorMessage << "\n";
         return 1;
     }
 
     errorMessage.clear();
     auto startup = keyrecord::prepareServerStartup(*config, &errorMessage);
     if (!startup) {
-        std::cerr << "打开可视化数据库失败: " << errorMessage << "\n";
+        std::cerr << "Failed to open visualization database: " << errorMessage << "\n";
         return 1;
     }
 

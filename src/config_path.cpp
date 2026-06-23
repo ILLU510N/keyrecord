@@ -16,7 +16,7 @@ std::filesystem::path getHomeDir() {
     const char* home = std::getenv("HOME");
 #endif
     if (!home || home[0] == '\0') {
-        throw std::runtime_error("无法获取用户主目录");
+        throw std::runtime_error("Failed to get user home directory");
     }
     return std::filesystem::path(home);
 }

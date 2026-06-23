@@ -40,7 +40,7 @@ bool execSQL(const char* sql) {
     int rc = sqlite3_exec(db, sql, nullptr, nullptr, &error);
     if (rc != SQLITE_OK) {
         std::string message = error ? error : sqlite3_errmsg(db);
-        logError("SQL 执行失败: " + message);
+        logError("SQL execution failed: " + message);
         sqlite3_free(error);
         return false;
     }
@@ -54,7 +54,7 @@ bool initDB(const std::string& dbPath) {
 
     int rc = sqlite3_open(dbPath.c_str(), &db);
     if (rc != SQLITE_OK) {
-        logError("打开数据库失败: " + std::string(db ? sqlite3_errmsg(db) : "unknown"));
+        logError("open database failed: " + std::string(db ? sqlite3_errmsg(db) : "unknown"));
         if (db) {
             sqlite3_close(db);
             db = nullptr;
@@ -81,7 +81,7 @@ bool initDB(const std::string& dbPath) {
         "INSERT INTO keys(timestamp,date,hour,vk_code,key_name) VALUES(?,?,?,?,?)";
     rc = sqlite3_prepare_v2(db, insertSql, -1, &insertStmt, nullptr);
     if (rc != SQLITE_OK) {
-        logError("预编译插入 SQL 失败: " + std::string(sqlite3_errmsg(db)));
+        logError("prepare insert SQL failed: " + std::string(sqlite3_errmsg(db)));
         return false;
     }
 
@@ -92,7 +92,7 @@ void closeDB() {
     if (insertStmt) {
         int rc = sqlite3_finalize(insertStmt);
         if (rc != SQLITE_OK) {
-            logError("释放插入语句失败: " + std::string(sqlite3_errmsg(db)));
+            logError("finalize insert statement failed: " + std::string(sqlite3_errmsg(db)));
         }
         insertStmt = nullptr;
     }
@@ -100,7 +100,7 @@ void closeDB() {
     if (db) {
         int rc = sqlite3_close(db);
         if (rc != SQLITE_OK) {
-            logError("关闭数据库失败: " + std::string(sqlite3_errmsg(db)));
+            logError("Failed to close database: " + std::string(sqlite3_errmsg(db)));
         } else {
             db = nullptr;
         }
@@ -110,7 +110,7 @@ void closeDB() {
 bool bindText(sqlite3_stmt* stmt, int index, const std::string& value) {
     int rc = sqlite3_bind_text(stmt, index, value.c_str(), -1, SQLITE_TRANSIENT);
     if (rc != SQLITE_OK) {
-        logError("绑定文本参数失败: " + std::string(sqlite3_errmsg(db)));
+        logError("Failed to bind text parameter: " + std::string(sqlite3_errmsg(db)));
         return false;
     }
     return true;
@@ -129,20 +129,20 @@ bool insertEvent(const KeyEvent& event) {
 
     int rc = sqlite3_reset(insertStmt);
     if (rc != SQLITE_OK) {
-        logError("重置插入语句失败: " + std::string(sqlite3_errmsg(db)));
+        logError("Failed to reset insert statement: " + std::string(sqlite3_errmsg(db)));
         return false;
     }
 
     rc = sqlite3_clear_bindings(insertStmt);
     if (rc != SQLITE_OK) {
-        logError("清理插入参数失败: " + std::string(sqlite3_errmsg(db)));
+        logError("Failed to clear insert bindings: " + std::string(sqlite3_errmsg(db)));
         return false;
     }
 
     if (sqlite3_bind_int64(insertStmt, 1, static_cast<sqlite3_int64>(ts)) != SQLITE_OK ||
         sqlite3_bind_int(insertStmt, 3, local.tm_hour) != SQLITE_OK ||
         sqlite3_bind_int(insertStmt, 4, static_cast<int>(event.vkCode)) != SQLITE_OK) {
-        logError("绑定数值参数失败: " + std::string(sqlite3_errmsg(db)));
+        logError("Failed to bind numeric parameter: " + std::string(sqlite3_errmsg(db)));
         return false;
     }
 
@@ -153,7 +153,7 @@ bool insertEvent(const KeyEvent& event) {
 
     rc = sqlite3_step(insertStmt);
     if (rc != SQLITE_DONE) {
-        logError("插入按键记录失败: " + std::string(sqlite3_errmsg(db)));
+        logError("Failed to insert key record: " + std::string(sqlite3_errmsg(db)));
         return false;
     }
 
@@ -236,7 +236,7 @@ bool startWriter(const std::string& dbPath) {
     try {
         writerThread = std::thread(writerLoop);
     } catch (const std::exception& ex) {
-        logError("启动写入线程失败: " + std::string(ex.what()));
+        logError("Failed to start writer thread: " + std::string(ex.what()));
         closeDB();
         return false;
     }
@@ -248,7 +248,7 @@ void enqueueKeyEvent(DWORD vkCode, std::chrono::system_clock::time_point eventTi
     {
         std::lock_guard<std::mutex> lock(queueMutex);
         if (writerStopRequested) {
-            logError("写入线程停止中，丢弃按键事件");
+            logError("Writer thread is stopping; dropping key event");
             return;
         }
         keyQueue.push_back({vkCode, eventTime});

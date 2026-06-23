@@ -17,6 +17,22 @@
         <span class="info-item">数据范围: <strong id="data-range">-</strong></span>
       </div>
     </header>
+    <section id="filter-section" class="section filter-section" aria-labelledby="filter-title">
+      <h2 id="filter-title">日期范围筛选</h2>
+      <div class="filter-panel">
+        <label class="date-field">
+          <span>开始日期</span>
+          <input id="filter-start" type="date" aria-label="筛选开始日期">
+        </label>
+        <label class="date-field">
+          <span>结束日期</span>
+          <input id="filter-end" type="date" aria-label="筛选结束日期">
+        </label>
+        <button id="filter-apply" class="primary-button" type="button">应用范围</button>
+        <button id="filter-last7" class="secondary-button" type="button">最近 7 天</button>
+        <span id="filter-status" class="filter-status" aria-live="polite">等待加载</span>
+      </div>
+    </section>
     <section id="heatmap-section" class="section">
       <h2>键盘热力图</h2>
       <div class="heatmap-summary">
@@ -31,6 +47,31 @@
         <span>低频</span>
         <div class="legend-gradient"></div>
         <span>高频</span>
+      </div>
+    </section>
+    <section id="top-keys-section" class="section">
+      <h2>Top 20 按键排行</h2>
+      <div class="table-summary">
+        <span>范围: <strong id="top-keys-range">-</strong></span>
+        <span id="top-keys-status" class="status-text">等待加载</span>
+      </div>
+      <div class="table-scroll">
+        <table class="top-keys-table">
+          <thead>
+            <tr>
+              <th scope="col">排名</th>
+              <th scope="col">按键</th>
+              <th scope="col">VK Code</th>
+              <th scope="col">次数</th>
+              <th scope="col">榜内占比</th>
+            </tr>
+          </thead>
+          <tbody id="top-keys-body">
+            <tr>
+              <td colspan="5" class="empty-cell">等待加载</td>
+            </tr>
+          </tbody>
+        </table>
       </div>
     </section>
     <section id="calendar-section" class="section">
