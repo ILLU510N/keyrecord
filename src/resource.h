@@ -1,0 +1,6 @@
+#ifndef KEYRECORD_RESOURCE_H
+#define KEYRECORD_RESOURCE_H
+
+#define IDI_KEYRECORD 101
+
+#endif

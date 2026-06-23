@@ -2,6 +2,7 @@
 
 #include "key_event_writer.h"
 #include "key_names.h"
+#include "resource.h"
 
 #include <shellapi.h>
 
@@ -23,13 +24,31 @@ LRESULT CALLBACK KeyboardProc(int code, WPARAM wParam, LPARAM lParam) {
     return CallNextHookEx(hook, code, wParam, lParam);
 }
 
-void createTrayIcon(HWND windowHandle) {
+HICON loadTrayIcon(HINSTANCE hInstance) {
+    // 托盘使用小尺寸图标，优先从多尺寸 .ico 资源中取系统推荐尺寸。
+    auto icon = static_cast<HICON>(LoadImageW(
+        hInstance,
+        MAKEINTRESOURCEW(IDI_KEYRECORD),
+        IMAGE_ICON,
+        GetSystemMetrics(SM_CXSMICON),
+        GetSystemMetrics(SM_CYSMICON),
+        LR_DEFAULTCOLOR | LR_SHARED
+    ));
+
+    if (icon) {
+        return icon;
+    }
+
+    return LoadIconW(nullptr, IDI_APPLICATION);
+}
+
+void createTrayIcon(HINSTANCE hInstance, HWND windowHandle) {
     nid.cbSize = sizeof(NOTIFYICONDATA);
     nid.hWnd = windowHandle;
     nid.uID = 1;
     nid.uFlags = NIF_ICON | NIF_MESSAGE | NIF_TIP;
     nid.uCallbackMessage = WM_TRAYICON;
-    nid.hIcon = LoadIcon(nullptr, IDI_APPLICATION);
+    nid.hIcon = loadTrayIcon(hInstance);
     wcscpy_s(nid.szTip, 128, L"KeyRecord Running");
     Shell_NotifyIcon(NIM_ADD, &nid);
 }
@@ -110,7 +129,7 @@ int runTrayApp(HINSTANCE hInstance) {
         return 1;
     }
 
-    createTrayIcon(hwnd);
+    createTrayIcon(hInstance, hwnd);
 
     MSG msg;
     while (GetMessage(&msg, nullptr, 0, 0)) {

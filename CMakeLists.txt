@@ -42,6 +42,21 @@ file(GLOB_RECURSE KEYRECORD_STATIC_RESOURCE_FILES CONFIGURE_DEPENDS
 set(KEYRECORD_GENERATED_DIR "${CMAKE_CURRENT_BINARY_DIR}/generated")
 set(KEYRECORD_GENERATED_RESOURCES_CPP "${KEYRECORD_GENERATED_DIR}/generated_resources.cpp")
 set(KEYRECORD_GENERATED_RESOURCES_H "${KEYRECORD_GENERATED_DIR}/generated_resources.h")
+set(KEYRECORD_ICON_FILE "${CMAKE_CURRENT_SOURCE_DIR}/resources/keyrecord.ico")
+set(KEYRECORD_APP_RESOURCE_RC "${CMAKE_CURRENT_BINARY_DIR}/keyrecord.rc")
+
+if(NOT EXISTS "${KEYRECORD_ICON_FILE}")
+    message(FATAL_ERROR "Application icon not found: ${KEYRECORD_ICON_FILE}")
+endif()
+
+configure_file(
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/keyrecord.rc.in"
+    "${KEYRECORD_APP_RESOURCE_RC}"
+    @ONLY
+)
+set_source_files_properties("${KEYRECORD_APP_RESOURCE_RC}"
+    PROPERTIES OBJECT_DEPENDS "${KEYRECORD_ICON_FILE}"
+)
 
 function(copy_sqlite_dll target_name)
     add_custom_command(TARGET ${target_name} POST_BUILD
@@ -136,6 +151,7 @@ endif()
 add_executable(keyrecord WIN32
     src/main.cpp
     src/tray_app.cpp
+    "${KEYRECORD_APP_RESOURCE_RC}"
 )
 target_link_libraries(keyrecord PRIVATE keyrecord_capture shell32)
 if(MSVC)
