@@ -3,8 +3,12 @@ const Analysis = {
   elements: {},
   focusDate: null,
   weekdayLabels: ['周日', '周一', '周二', '周三', '周四', '周五', '周六'],
-  timeline: { events: [], timers: [], playing: false },
+  timeline: { events: [], timers: [], playing: false, loading: false, loadedDate: null },
   live: { enabled: false, timer: null, getRange: null, onTick: null },
+  visible: false,
+  loaded: false,
+  currentRangeKey: null,
+  observer: null,
 
   init() {
     const ids = [
@@ -24,6 +28,7 @@ const Analysis = {
     this.bind('timeline-stop', 'click', () => this.stopTimeline());
     this.bind('live-toggle', 'change', (event) => this.toggleLive(event.target.checked));
     this.bind('compare-run', 'click', () => this.runCompare());
+    this.initOnDemandLoading();
 
     console.log('✓ 高级分析模块初始化完成');
   },
@@ -35,11 +40,50 @@ const Analysis = {
     }
   },
 
+  initOnDemandLoading() {
+    const section = document.getElementById('analysis-section');
+    if (!section) return;
+
+    if (!('IntersectionObserver' in window)) {
+      this.visible = true;
+      return;
+    }
+
+    this.observer = new IntersectionObserver((entries) => {
+      entries.forEach((entry) => {
+        this.visible = entry.isIntersecting;
+        if (entry.isIntersecting) {
+          this.loadCurrentRange();
+        }
+      });
+    }, { rootMargin: '160px 0px' });
+    this.observer.observe(section);
+  },
+
+  isRangeActive() {
+    return this.visible || this.loaded;
+  },
+
+  async loadCurrentRange(force = false) {
+    if (!this.live.getRange) return;
+    const range = this.live.getRange();
+    if (!range || !range.start || !range.end) return;
+    await this.update(range.start, range.end, { force });
+  },
+
   // 由 main.js 在范围数据刷新时调用。
-  async update(start, end) {
+  async update(start, end, options) {
+    const rangeKey = (start || '') + '|' + (end || '');
+    if (this.loaded && !(options && options.force) && this.currentRangeKey === rangeKey) {
+      return;
+    }
+
+    this.loaded = true;
+    this.currentRangeKey = rangeKey;
     this.focusDate = end || start || null;
     this.setText('speed-date', this.focusDate || '全部');
     this.setText('timeline-date', this.focusDate || '全部');
+    this.resetTimelineForDate(this.focusDate);
 
     const rangeQuery = this.rangeQuery(start, end);
 
@@ -48,9 +92,21 @@ const Analysis = {
       this.loadInto('region-chart', '/api/region-stats' + rangeQuery, (rows) => this.renderRegion(rows)),
       this.loadInto('hand-chart', '/api/hand-stats' + rangeQuery, (rows) => this.renderHand(rows)),
       this.loadCombos(rangeQuery),
-      this.loadSpeed(this.focusDate),
-      this.loadTimeline(this.focusDate)
+      this.loadSpeed(this.focusDate)
     ]);
+  },
+
+  resetTimelineForDate(date) {
+    if (this.timeline.loadedDate === date && this.timeline.events.length > 0) {
+      return;
+    }
+
+    this.stopTimeline();
+    this.timeline.events = [];
+    this.timeline.loadedDate = null;
+    this.setProgress(0);
+    this.setText('timeline-current', '—');
+    this.setText('timeline-status', date ? '点击播放加载' : '请选择单日范围');
   },
 
   rangeQuery(start, end) {
@@ -60,12 +116,8 @@ const Analysis = {
     return '';
   },
 
-  async fetchJson(url) {
-    const response = await fetch(url);
-    if (!response.ok) {
-      throw new Error('请求失败: ' + response.status);
-    }
-    return response.json();
+  async fetchJson(url, options) {
+    return ApiCache.fetchJson(url, options);
   },
 
   async loadInto(elementId, url, render) {
@@ -346,23 +398,36 @@ const Analysis = {
     this.setText('timeline-status', '加载中...');
     if (!date) {
       this.timeline.events = [];
+      this.timeline.loadedDate = null;
       this.setText('timeline-status', '请选择单日范围');
       return;
     }
     try {
-      const events = await this.fetchJson('/api/timeline?date=' + encodeURIComponent(date) + '&limit=5000');
+      this.timeline.loading = true;
+      const events = await this.fetchJson(
+        '/api/timeline?date=' + encodeURIComponent(date) + '&limit=5000',
+        { storage: false, ttlMs: 10000 }
+      );
       this.timeline.events = Array.isArray(events) ? events : [];
+      this.timeline.loadedDate = date;
       this.setText('timeline-status', this.timeline.events.length + ' 个事件，就绪');
       this.setProgress(0);
     } catch (error) {
       console.error('加载时序失败:', error);
       this.timeline.events = [];
+      this.timeline.loadedDate = null;
       this.setText('timeline-status', '加载失败');
+    } finally {
+      this.timeline.loading = false;
     }
   },
 
-  playTimeline() {
+  async playTimeline() {
     if (this.timeline.playing) return;
+    if (!this.timeline.events.length && this.focusDate && !this.timeline.loading) {
+      await this.loadTimeline(this.focusDate);
+    }
+
     const events = this.timeline.events;
     if (!events.length) {
       this.setText('timeline-status', '无可回放事件');

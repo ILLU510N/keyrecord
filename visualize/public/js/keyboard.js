@@ -243,10 +243,7 @@ const KeyboardHeatmap = {
     this.setRangeLabel(startDate, endDate);
 
     try {
-      const response = await fetch(url);
-      if (!response.ok) throw new Error('API 请求失败: ' + response.status);
-
-      this.data = await response.json();
+      this.data = await ApiCache.fetchJson(url);
       this.renderHeatmapData();
       this.setStatus(this.data.length > 0 ? '已加载' : '暂无可映射按键数据');
       console.log('✓ 键盘热力图数据加载完成: ' + this.data.length + ' 个按键');

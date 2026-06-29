@@ -54,6 +54,34 @@ bool seedDatabase(sqlite3* database) {
                    "(1767398409,'2026-01-03',0,98,'Numpad2');");
 }
 
+bool seedSummaryOnlyDatabase(sqlite3* database) {
+    return execSql(database,
+                   "CREATE TABLE keys("
+                   "id INTEGER PRIMARY KEY AUTOINCREMENT,"
+                   "timestamp INTEGER,"
+                   "date TEXT,"
+                   "hour INTEGER,"
+                   "vk_code INTEGER,"
+                   "key_name TEXT);"
+                   "CREATE TABLE daily_key_stats("
+                   "date TEXT NOT NULL,"
+                   "vk_code INTEGER NOT NULL,"
+                   "key_name TEXT NOT NULL,"
+                   "count INTEGER NOT NULL,"
+                   "PRIMARY KEY(date, vk_code, key_name));"
+                   "CREATE TABLE daily_hour_stats("
+                   "date TEXT NOT NULL,"
+                   "hour INTEGER NOT NULL,"
+                   "count INTEGER NOT NULL,"
+                   "PRIMARY KEY(date, hour));"
+                   "INSERT INTO daily_key_stats(date,vk_code,key_name,count) VALUES"
+                   "('2026-02-01',65,'A',2),"
+                   "('2026-02-02',66,'B',1);"
+                   "INSERT INTO daily_hour_stats(date,hour,count) VALUES"
+                   "('2026-02-01',9,2),"
+                   "('2026-02-02',10,1);");
+}
+
 } // namespace
 
 int main() {
@@ -169,6 +197,76 @@ int main() {
 
     sqlite3_close(database);
     std::filesystem::remove(dbPath);
+
+    const auto summaryDbPath = std::filesystem::temp_directory_path() / "keyrecord_api_queries_summary_test.db";
+    std::filesystem::remove(summaryDbPath);
+
+    sqlite3* summaryDatabase = nullptr;
+    if (sqlite3_open(summaryDbPath.string().c_str(), &summaryDatabase) != SQLITE_OK) {
+        std::cerr << "summary test database open failed\n";
+        return 1;
+    }
+
+    ok = seedSummaryOnlyDatabase(summaryDatabase) && ok;
+
+    const auto summaryInfo = keyrecord::queryInfo(summaryDatabase);
+    ok = expectEqual(summaryInfo.body,
+                     "{\"total_keys\":3,\"first_date\":\"2026-02-01\",\"last_date\":\"2026-02-02\","
+                     "\"unique_keys\":2}",
+                     "summary-backed /api/info JSON mismatch") &&
+         ok;
+
+    const auto summaryDailyStats = keyrecord::queryDailyStats(summaryDatabase);
+    ok = expectEqual(summaryDailyStats.body,
+                     "[{\"date\":\"2026-02-01\",\"count\":2},{\"date\":\"2026-02-02\",\"count\":1}]",
+                     "summary-backed /api/daily-stats JSON mismatch") &&
+         ok;
+
+    const auto summaryHourlyStats = keyrecord::queryHourlyStats(summaryDatabase, "2026-02-01");
+    ok = expectEqual(summaryHourlyStats.body,
+                     "[{\"hour\":9,\"count\":2}]",
+                     "summary-backed /api/hourly-stats JSON mismatch") &&
+         ok;
+
+    const auto summaryTopKey = keyrecord::queryKeys(summaryDatabase, std::nullopt, std::nullopt, 1);
+    ok = expectEqual(summaryTopKey.body,
+                     "[{\"key_name\":\"A\",\"vk_code\":65,\"count\":2}]",
+                     "summary-backed /api/keys JSON mismatch") &&
+         ok;
+
+    const auto summaryHeatmap = keyrecord::queryHeatmap(summaryDatabase, std::nullopt, "2026-02-01", "2026-02-02");
+    ok = expectEqual(summaryHeatmap.body,
+                     "[{\"vk_code\":65,\"key_name\":\"A\",\"count\":2,\"x\":175,\"y\":225},"
+                     "{\"vk_code\":66,\"key_name\":\"B\",\"count\":1,\"x\":435,\"y\":285}]",
+                     "summary-backed /api/heatmap JSON mismatch") &&
+         ok;
+
+    const auto summaryHourlyHeatmap =
+        keyrecord::queryHourlyHeatmap(summaryDatabase, "2026-02-01", "2026-02-02");
+    ok = expectEqual(summaryHourlyHeatmap.body,
+                     "[{\"weekday\":0,\"hour\":9,\"count\":2},{\"weekday\":1,\"hour\":10,\"count\":1}]",
+                     "summary-backed /api/hourly-heatmap JSON mismatch") &&
+         ok;
+
+    const auto summaryRegionStats = keyrecord::queryRegionStats(summaryDatabase, "2026-02-01", "2026-02-02");
+    ok = expectEqual(summaryRegionStats.body,
+                     "[{\"region\":\"letters\",\"count\":3},{\"region\":\"digits\",\"count\":0},"
+                     "{\"region\":\"numpad\",\"count\":0},{\"region\":\"function\",\"count\":0},"
+                     "{\"region\":\"navigation\",\"count\":0},{\"region\":\"modifiers\",\"count\":0},"
+                     "{\"region\":\"control\",\"count\":0},{\"region\":\"punctuation\",\"count\":0},"
+                     "{\"region\":\"other\",\"count\":0}]",
+                     "summary-backed /api/region-stats JSON mismatch") &&
+         ok;
+
+    const auto summaryHandStats = keyrecord::queryHandStats(summaryDatabase, "2026-02-01", "2026-02-02");
+    ok = expectEqual(summaryHandStats.body,
+                     "[{\"hand\":\"left\",\"count\":3},{\"hand\":\"right\",\"count\":0},"
+                     "{\"hand\":\"both\",\"count\":0},{\"hand\":\"unknown\",\"count\":0}]",
+                     "summary-backed /api/hand-stats JSON mismatch") &&
+         ok;
+
+    sqlite3_close(summaryDatabase);
+    std::filesystem::remove(summaryDbPath);
 
     return ok ? 0 : 1;
 }

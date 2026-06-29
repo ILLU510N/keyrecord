@@ -55,6 +55,19 @@ bool createWritableFixture(const std::filesystem::path& dbPath) {
     return ok;
 }
 
+bool insertAdditionalKey(const std::filesystem::path& dbPath) {
+    sqlite3* database = nullptr;
+    if (sqlite3_open(dbPath.string().c_str(), &database) != SQLITE_OK) {
+        return false;
+    }
+
+    const bool ok = execSql(database,
+                            "INSERT INTO keys(timestamp,date,hour,vk_code,key_name) VALUES"
+                            "(1767398400,'2026-01-03',0,67,'C');");
+    sqlite3_close(database);
+    return ok;
+}
+
 bool hasHeader(const keyrecord::HttpResponse& response, std::string_view name, std::string_view value) {
     for (const auto& header : response.headers) {
         if (header.name == name && header.value == value) {
@@ -101,6 +114,17 @@ int main() {
                      "Visualization service /api/info JSON mismatch") &&
                  ok;
             ok = expect(hasHeader(info, "Access-Control-Allow-Origin", "*"), "Visualization service API should include the CORS header") && ok;
+
+            ok = expect(insertAdditionalKey(dbPath), "Failed to insert additional cache test key") && ok;
+            const auto cachedInfo = service->handleRequest("GET", "/api/info");
+            ok = expectEqual(
+                     cachedInfo.body,
+                     info.body,
+                     "API cache should return the first body inside TTL") &&
+                 ok;
+
+            const auto staticAgain = service->handleRequest("GET", "/");
+            ok = expect(staticAgain.status == 200, "Visualization service index should still return status 200") && ok;
         }
     }
 

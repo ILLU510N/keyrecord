@@ -104,11 +104,35 @@ bool bindText(sqlite3_stmt* stmt, int index, std::string_view value) {
     return sqlite3_bind_text(stmt, index, value.data(), static_cast<int>(value.size()), SQLITE_TRANSIENT) == SQLITE_OK;
 }
 
+bool tableExists(sqlite3* database, const char* tableName) {
+    sqlite3_stmt* stmt = nullptr;
+    const char* sql = "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ? LIMIT 1";
+    if (!prepare(database, sql, &stmt)) {
+        return false;
+    }
+
+    if (sqlite3_bind_text(stmt, 1, tableName, -1, SQLITE_TRANSIENT) != SQLITE_OK) {
+        sqlite3_finalize(stmt);
+        return false;
+    }
+
+    const bool exists = sqlite3_step(stmt) == SQLITE_ROW;
+    sqlite3_finalize(stmt);
+    return exists;
+}
+
+bool hasSummaryTables(sqlite3* database) {
+    return tableExists(database, "daily_key_stats") && tableExists(database, "daily_hour_stats");
+}
+
 ApiResponse queryKeysWithoutRange(sqlite3* database, int limit) {
     sqlite3_stmt* stmt = nullptr;
-    const char* sql =
-        "SELECT key_name, vk_code, COUNT(*) as count FROM keys "
-        "GROUP BY key_name, vk_code ORDER BY count DESC LIMIT ?";
+    const bool useSummary = hasSummaryTables(database);
+    const char* sql = useSummary
+        ? "SELECT key_name, vk_code, SUM(count) as count FROM daily_key_stats "
+          "GROUP BY key_name, vk_code ORDER BY count DESC LIMIT ?"
+        : "SELECT key_name, vk_code, COUNT(*) as count FROM keys "
+          "GROUP BY key_name, vk_code ORDER BY count DESC LIMIT ?";
 
     if (!prepare(database, sql, &stmt)) {
         return jsonError(database);
@@ -136,10 +160,14 @@ ApiResponse queryKeysWithoutRange(sqlite3* database, int limit) {
 
 ApiResponse queryKeysWithRange(sqlite3* database, std::string_view startDate, std::string_view endDate, int limit) {
     sqlite3_stmt* stmt = nullptr;
-    const char* sql =
-        "SELECT key_name, vk_code, COUNT(*) as count FROM keys "
-        "WHERE date BETWEEN ? AND ? "
-        "GROUP BY key_name, vk_code ORDER BY count DESC LIMIT ?";
+    const bool useSummary = hasSummaryTables(database);
+    const char* sql = useSummary
+        ? "SELECT key_name, vk_code, SUM(count) as count FROM daily_key_stats "
+          "WHERE date BETWEEN ? AND ? "
+          "GROUP BY key_name, vk_code ORDER BY count DESC LIMIT ?"
+        : "SELECT key_name, vk_code, COUNT(*) as count FROM keys "
+          "WHERE date BETWEEN ? AND ? "
+          "GROUP BY key_name, vk_code ORDER BY count DESC LIMIT ?";
 
     if (!prepare(database, sql, &stmt)) {
         return jsonError(database);
@@ -210,9 +238,12 @@ ApiResponse queryHeatmapRows(sqlite3* database, const char* sql) {
 
 ApiResponse queryHeatmapWithDate(sqlite3* database, std::string_view date) {
     sqlite3_stmt* stmt = nullptr;
-    const char* sql =
-        "SELECT vk_code, key_name, COUNT(*) as count FROM keys "
-        "WHERE date = ? GROUP BY vk_code, key_name ORDER BY count DESC";
+    const bool useSummary = hasSummaryTables(database);
+    const char* sql = useSummary
+        ? "SELECT vk_code, key_name, SUM(count) as count FROM daily_key_stats "
+          "WHERE date = ? GROUP BY vk_code, key_name ORDER BY count DESC"
+        : "SELECT vk_code, key_name, COUNT(*) as count FROM keys "
+          "WHERE date = ? GROUP BY vk_code, key_name ORDER BY count DESC";
 
     if (!prepare(database, sql, &stmt)) {
         return jsonError(database);
@@ -229,9 +260,12 @@ ApiResponse queryHeatmapWithDate(sqlite3* database, std::string_view date) {
 
 ApiResponse queryHeatmapWithRange(sqlite3* database, std::string_view startDate, std::string_view endDate) {
     sqlite3_stmt* stmt = nullptr;
-    const char* sql =
-        "SELECT vk_code, key_name, COUNT(*) as count FROM keys "
-        "WHERE date BETWEEN ? AND ? GROUP BY vk_code, key_name ORDER BY count DESC";
+    const bool useSummary = hasSummaryTables(database);
+    const char* sql = useSummary
+        ? "SELECT vk_code, key_name, SUM(count) as count FROM daily_key_stats "
+          "WHERE date BETWEEN ? AND ? GROUP BY vk_code, key_name ORDER BY count DESC"
+        : "SELECT vk_code, key_name, COUNT(*) as count FROM keys "
+          "WHERE date BETWEEN ? AND ? GROUP BY vk_code, key_name ORDER BY count DESC";
 
     if (!prepare(database, sql, &stmt)) {
         return jsonError(database);
@@ -275,7 +309,10 @@ bool bindRange(sqlite3_stmt* stmt, const RangeFilter& filter, int startIndex) {
 
 // 拉取 (vk_code, count) 聚合，供分区与左右手统计在 C++ 侧归类。
 std::optional<std::vector<std::pair<int, std::int64_t>>> fetchKeyCounts(sqlite3* database, const RangeFilter& filter) {
-    const std::string sql = "SELECT vk_code, COUNT(*) FROM keys" + rangeWhereClause(filter) + " GROUP BY vk_code";
+    const bool useSummary = hasSummaryTables(database);
+    const std::string sql = useSummary
+        ? "SELECT vk_code, SUM(count) FROM daily_key_stats" + rangeWhereClause(filter) + " GROUP BY vk_code"
+        : "SELECT vk_code, COUNT(*) FROM keys" + rangeWhereClause(filter) + " GROUP BY vk_code";
     sqlite3_stmt* stmt = nullptr;
     if (!prepare(database, sql.c_str(), &stmt) || !bindRange(stmt, filter, 1)) {
         sqlite3_finalize(stmt);
@@ -339,7 +376,10 @@ std::optional<std::string_view> modifierLabel(int vkCode) {
 
 ApiResponse queryInfo(sqlite3* database) {
     sqlite3_stmt* stmt = nullptr;
-    const char* sql = "SELECT COUNT(*), MIN(date), MAX(date), COUNT(DISTINCT vk_code) FROM keys";
+    const bool useSummary = hasSummaryTables(database);
+    const char* sql = useSummary
+        ? "SELECT COALESCE(SUM(count), 0), MIN(date), MAX(date), COUNT(DISTINCT vk_code) FROM daily_key_stats"
+        : "SELECT COUNT(*), MIN(date), MAX(date), COUNT(DISTINCT vk_code) FROM keys";
     if (!prepare(database, sql, &stmt)) {
         return jsonError(database);
     }
@@ -364,7 +404,10 @@ ApiResponse queryInfo(sqlite3* database) {
 
 ApiResponse queryDailyStats(sqlite3* database) {
     sqlite3_stmt* stmt = nullptr;
-    const char* sql = "SELECT date, COUNT(*) as count FROM keys GROUP BY date ORDER BY date";
+    const bool useSummary = hasSummaryTables(database);
+    const char* sql = useSummary
+        ? "SELECT date, SUM(count) as count FROM daily_key_stats GROUP BY date ORDER BY date"
+        : "SELECT date, COUNT(*) as count FROM keys GROUP BY date ORDER BY date";
     if (!prepare(database, sql, &stmt)) {
         return jsonError(database);
     }
@@ -389,9 +432,12 @@ ApiResponse queryDailyStats(sqlite3* database) {
 
 ApiResponse queryHourlyStats(sqlite3* database, std::string_view date) {
     sqlite3_stmt* stmt = nullptr;
-    const char* sql =
-        "SELECT hour, COUNT(*) as count FROM keys "
-        "WHERE date = ? GROUP BY hour ORDER BY hour";
+    const bool useSummary = hasSummaryTables(database);
+    const char* sql = useSummary
+        ? "SELECT hour, count FROM daily_hour_stats "
+          "WHERE date = ? ORDER BY hour"
+        : "SELECT hour, COUNT(*) as count FROM keys "
+          "WHERE date = ? GROUP BY hour ORDER BY hour";
 
     if (!prepare(database, sql, &stmt)) {
         return jsonError(database);
@@ -440,9 +486,13 @@ ApiResponse queryHeatmap(
     if (date) {
         return queryHeatmapWithDate(database, *date);
     }
+    const bool useSummary = hasSummaryTables(database);
     return queryHeatmapRows(
         database,
-        "SELECT vk_code, key_name, COUNT(*) as count FROM keys GROUP BY vk_code, key_name ORDER BY count DESC");
+        useSummary
+            ? "SELECT vk_code, key_name, SUM(count) as count FROM daily_key_stats "
+              "GROUP BY vk_code, key_name ORDER BY count DESC"
+            : "SELECT vk_code, key_name, COUNT(*) as count FROM keys GROUP BY vk_code, key_name ORDER BY count DESC");
 }
 
 ApiResponse queryHourlyHeatmap(
@@ -450,10 +500,14 @@ ApiResponse queryHourlyHeatmap(
     std::optional<std::string_view> startDate,
     std::optional<std::string_view> endDate) {
     const RangeFilter filter{std::nullopt, startDate, endDate};
-    const std::string sql =
-        "SELECT CAST(strftime('%w', date) AS INTEGER) AS weekday, hour, COUNT(*) AS count "
-        "FROM keys" +
-        rangeWhereClause(filter) + " GROUP BY weekday, hour ORDER BY weekday, hour";
+    const bool useSummary = hasSummaryTables(database);
+    const std::string sql = useSummary
+        ? "SELECT CAST(strftime('%w', date) AS INTEGER) AS weekday, hour, SUM(count) AS count "
+          "FROM daily_hour_stats" +
+              rangeWhereClause(filter) + " GROUP BY weekday, hour ORDER BY weekday, hour"
+        : "SELECT CAST(strftime('%w', date) AS INTEGER) AS weekday, hour, COUNT(*) AS count "
+          "FROM keys" +
+              rangeWhereClause(filter) + " GROUP BY weekday, hour ORDER BY weekday, hour";
 
     sqlite3_stmt* stmt = nullptr;
     if (!prepare(database, sql.c_str(), &stmt) || !bindRange(stmt, filter, 1)) {

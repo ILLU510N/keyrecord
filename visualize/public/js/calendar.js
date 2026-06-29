@@ -23,9 +23,7 @@ const CalendarHeatmap = {
 
   async load() {
     try {
-      const response = await fetch('/api/daily-stats');
-      if (!response.ok) throw new Error('API 请求失败: ' + response.status);
-      this.data = await response.json();
+      this.data = await ApiCache.fetchJson('/api/daily-stats');
       this.render();
       this.renderBrush();
       console.log('✓ 日历图数据加载完成: ' + this.data.length + ' 天');
