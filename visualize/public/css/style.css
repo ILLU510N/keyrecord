@@ -385,6 +385,375 @@ header h1 {
 .ratio-text { min-width: 42px; font-variant-numeric: tabular-nums; }
 .empty-cell { color: var(--muted); text-align: center; padding: 28px 14px !important; }
 
+/* ===== 高级分析 ===== */
+.analysis-tools {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  flex-wrap: wrap;
+}
+
+.live-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-weight: 600;
+  color: var(--text);
+  cursor: pointer;
+}
+
+.live-toggle input {
+  width: 16px;
+  height: 16px;
+  accent-color: var(--accent);
+  cursor: pointer;
+}
+
+.analysis-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 20px;
+}
+
+.analysis-card {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 20px;
+  background: var(--panel-soft);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+
+.analysis-card--wide { grid-column: 1 / -1; }
+
+.analysis-card h3 {
+  font-size: 1.05em;
+  font-weight: 700;
+  color: var(--text);
+}
+
+.analysis-subhead {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  font-size: 0.9em;
+  color: var(--muted);
+}
+
+.analysis-subhead strong { color: var(--text); }
+.analysis-hint { font-size: 0.85em; color: var(--muted); }
+
+/* 小时级热力图（星期 × 小时） */
+.hourly-heatmap { overflow-x: auto; }
+
+.hh-grid {
+  display: grid;
+  grid-template-columns: auto repeat(24, minmax(18px, 30px));
+  gap: 3px;
+  align-items: center;
+  width: max-content;
+  margin-inline: auto;
+}
+
+.hh-head {
+  font-size: 11px;
+  color: var(--muted);
+  text-align: center;
+  align-self: end;
+  font-variant-numeric: tabular-nums;
+}
+
+.hh-row-head {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  padding-right: 8px;
+  font-size: 12px;
+  color: var(--muted);
+  white-space: nowrap;
+}
+
+.hh-cell {
+  aspect-ratio: 1 / 1;
+  border-radius: 3px;
+  background: var(--panel);
+  border: 1px solid color-mix(in srgb, var(--border) 70%, transparent);
+}
+
+.hh-cell.has-heat {
+  border-color: transparent;
+  background: color-mix(in srgb, var(--accent) calc(var(--hh-heat, 0) * 85% + 15%), var(--panel));
+}
+
+/* 横向条形图（键盘分区统计） */
+.bar-chart { min-height: 120px; }
+
+.bar-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.bar-row {
+  display: grid;
+  grid-template-columns: 72px 1fr 72px;
+  align-items: center;
+  gap: 10px;
+}
+
+.bar-label {
+  font-size: 0.9em;
+  color: var(--muted);
+  text-align: right;
+  white-space: nowrap;
+}
+
+.bar-track {
+  position: relative;
+  height: 14px;
+  border-radius: 999px;
+  background: var(--panel);
+  box-shadow: inset 0 0 0 1px var(--border);
+  overflow: hidden;
+}
+
+.bar-fill {
+  display: block;
+  height: 100%;
+  border-radius: 999px;
+  background: linear-gradient(90deg, var(--accent), var(--green));
+}
+
+.bar-value {
+  font-size: 0.86em;
+  font-weight: 700;
+  color: var(--text);
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+/* 左右手使用对比 */
+.hand-compare {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 14px;
+  min-height: 80px;
+}
+
+.hand-bar {
+  display: flex;
+  height: 28px;
+  border-radius: 999px;
+  overflow: hidden;
+  background: var(--panel);
+  box-shadow: inset 0 0 0 1px var(--border);
+}
+
+.hand-seg {
+  display: block;
+  height: 100%;
+}
+
+.hand-seg--left { background: linear-gradient(90deg, var(--accent), var(--accent-strong)); }
+.hand-seg--right { background: linear-gradient(90deg, var(--green), #16a34a); }
+.hand-seg--both { background: linear-gradient(90deg, var(--amber), #f59e0b); }
+.hand-seg--unknown { background: color-mix(in srgb, var(--muted) 50%, var(--panel)); }
+
+.hand-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 18px;
+  font-size: 0.88em;
+  color: var(--muted);
+}
+
+.hand-legend-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.hand-swatch {
+  width: 12px;
+  height: 12px;
+  border-radius: 3px;
+  flex: none;
+  box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.12);
+}
+
+/* 输入速度曲线（SVG 折线） */
+.line-chart { min-height: 160px; }
+
+.speed-svg {
+  display: block;
+  width: 100%;
+  height: auto;
+  overflow: visible;
+}
+
+.speed-axis { fill: none; stroke: var(--border); stroke-width: 1.5; }
+.speed-tick { fill: var(--muted); font-size: 11px; }
+
+.speed-line {
+  fill: none;
+  stroke: var(--accent);
+  stroke-width: 2;
+  stroke-linejoin: round;
+  stroke-linecap: round;
+}
+
+.speed-dot { fill: var(--accent); stroke: var(--panel); stroke-width: 1; }
+
+/* 组合统计 / 数据对比表格 */
+.combo-table,
+.compare-table {
+  width: 100%;
+  border-collapse: collapse;
+  background: var(--panel);
+}
+
+.combo-table th,
+.combo-table td,
+.compare-table th,
+.compare-table td {
+  padding: 10px 14px;
+  border-bottom: 1px solid color-mix(in srgb, var(--border) 72%, transparent);
+  text-align: left;
+}
+
+.combo-table th,
+.compare-table th {
+  background: var(--panel-soft);
+  color: var(--muted);
+  font-size: 0.82em;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+}
+
+.combo-table tbody tr:last-child td,
+.compare-table tbody tr:last-child td { border-bottom: 0; }
+
+.combo-table tbody tr:hover,
+.compare-table tbody tr:hover { background: color-mix(in srgb, var(--accent) 7%, var(--panel)); }
+
+/* 多键组合表格：默认约显示 10 行，超出部分通过竖向滚动条查看全部 */
+.combo-scroll {
+  max-height: calc(42px * 10 + 44px); /* 约 10 行数据 + 表头 */
+  overflow-y: auto;
+}
+
+/* 滚动时表头保持可见 */
+.combo-scroll .combo-table thead th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  box-shadow: inset 0 -1px 0 color-mix(in srgb, var(--border) 72%, transparent);
+}
+
+.diff-up { color: var(--green); font-weight: 700; }
+.diff-down { color: var(--red); font-weight: 700; }
+
+/* 按键时序动画回放 */
+.timeline-controls {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.speed-field {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.9em;
+  font-weight: 600;
+  color: var(--muted);
+}
+
+.speed-field select {
+  height: 36px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 0 8px;
+  background: var(--panel-soft);
+  color: var(--text);
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.timeline-current {
+  margin-left: auto;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-weight: 700;
+  color: var(--accent-strong);
+}
+
+.timeline-progress {
+  height: 8px;
+  border-radius: 999px;
+  background: var(--panel);
+  box-shadow: inset 0 0 0 1px var(--border);
+  overflow: hidden;
+}
+
+#timeline-progress-bar {
+  display: block;
+  width: 0;
+  height: 100%;
+  border-radius: 999px;
+  background: linear-gradient(90deg, var(--accent), var(--green));
+  transition: width 0.12s linear;
+}
+
+/* 数据对比 */
+.compare-card { margin-top: 20px; }
+
+.compare-controls {
+  display: flex;
+  align-items: flex-end;
+  gap: 16px;
+  flex-wrap: wrap;
+  margin-bottom: 16px;
+}
+
+.compare-range {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.compare-label {
+  font-size: 0.9em;
+  font-weight: 700;
+  color: var(--accent-strong);
+}
+
+.compare-range input {
+  height: 38px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 0 10px;
+  color: var(--text);
+  background: var(--panel-soft);
+  font: 600 13px/1.2 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+}
+
+.compare-range input:focus {
+  outline: 2px solid color-mix(in srgb, var(--accent) 25%, transparent);
+  border-color: var(--accent);
+}
+
+@media (max-width: 900px) {
+  .analysis-grid { grid-template-columns: 1fr; }
+  .analysis-card--wide { grid-column: auto; }
+  .timeline-current { margin-left: 0; }
+}
+
 #calendar-heatmap {
   min-height: 200px;
   overflow-x: auto;
@@ -442,6 +811,7 @@ footer {
   .filter-section,
   .keyboard-tools,
   .export-toolbar,
+  .analysis-tools,
   footer {
     display: none !important;
   }
@@ -470,4 +840,6 @@ footer {
   #calendar-heatmap {
     overflow: visible;
   }
+  /* 打印时展开多键组合表格，显示全部行 */
+  .combo-scroll { max-height: none; }
 }
