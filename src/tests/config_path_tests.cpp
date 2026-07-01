@@ -3,6 +3,7 @@
 #include <chrono>
 #include <cstdlib>
 #include <filesystem>
+#include <fstream>
 #include <iostream>
 #include <optional>
 #include <string>
@@ -95,6 +96,44 @@ int main() {
     ok = expectPathEqual(actualDbPath, expectedDbPath, "Default database file should be inside the config directory") && ok;
 
     ok = expect(keyrecord::defaultDatabaseFileName() == "keyrecord.db", "Default database file name should be keyrecord.db") && ok;
+
+    // ensureParentDirectoryExists: 为尚不存在的嵌套数据库路径递归创建父目录。
+    {
+        const auto freshDbPath = tempHome / "fresh" / "nested" / "keyrecord.db";
+        std::string error;
+        ok = expect(keyrecord::ensureParentDirectoryExists(freshDbPath.string(), &error),
+                    "ensureParentDirectoryExists should create a missing parent directory") && ok;
+        ok = expect(error.empty(), "ensureParentDirectoryExists should not report an error on success") && ok;
+        ok = expect(std::filesystem::is_directory(freshDbPath.parent_path()),
+                    "ensureParentDirectoryExists should create the database parent directory") && ok;
+
+        // 目录已存在时应保持成功（幂等）。
+        ok = expect(keyrecord::ensureParentDirectoryExists(freshDbPath.string()),
+                    "ensureParentDirectoryExists should succeed when the directory already exists") && ok;
+    }
+
+    // ensureParentDirectoryExists: 仅有文件名（无父目录）时视为成功且不创建目录。
+    {
+        std::string error;
+        ok = expect(keyrecord::ensureParentDirectoryExists("keyrecord.db", &error),
+                    "ensureParentDirectoryExists should succeed for a bare file name") && ok;
+        ok = expect(error.empty(), "ensureParentDirectoryExists should not report an error for a bare file name") && ok;
+    }
+
+    // ensureParentDirectoryExists: 父路径被普通文件占据时应失败并给出错误信息。
+    {
+        const auto blocker = tempHome / "blocker";
+        {
+            std::ofstream out(blocker, std::ios::binary);
+            out << "not a directory";
+        }
+        const auto blockedDbPath = blocker / "sub" / "keyrecord.db";
+        std::string error;
+        ok = expect(!keyrecord::ensureParentDirectoryExists(blockedDbPath.string(), &error),
+                    "ensureParentDirectoryExists should fail when a file blocks the directory path") && ok;
+        ok = expect(!error.empty(),
+                    "ensureParentDirectoryExists should report an error when directory creation fails") && ok;
+    }
 
     std::filesystem::remove_all(tempHome);
     return ok ? 0 : 1;

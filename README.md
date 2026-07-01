@@ -146,12 +146,16 @@ ctest --test-dir build -C Debug --output-on-failure
 
 ```ini
 [server]
-address = 0.0.0.0      # 服务端监听地址，默认 0.0.0.0
-port    = 3000         # 服务端监听端口，默认 3000（取值 1..65535）
+# 服务端监听地址，默认 0.0.0.0
+address = 0.0.0.0
+# 服务端监听端口，默认 3000（取值 1..65535）
+port    = 3000         
 
 [storage]
-db_path = D:/data/keyrecord/keyrecord.db   # 数据库文件完整路径
-# db_dir = D:/data/keyrecord               # 或只给目录，文件名固定 keyrecord.db（db_path 优先于 db_dir）
+# 数据库文件完整路径
+db_path = D:/data/keyrecord/keyrecord.db
+# 或只给目录，文件名固定 keyrecord.db（db_path 优先于 db_dir）
+# db_dir = D:/data/keyrecord               
 ```
 
 - 以 `#` 或 `;` 开头的整行是注释；节名与键名大小写不敏感；非法或多余的项会被忽略。

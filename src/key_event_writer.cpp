@@ -56,6 +56,14 @@ bool initDB(const std::string& dbPath) {
         return true;
     }
 
+    // sqlite3_open 不会创建缺失的父目录；若配置的 db_path/db_dir 指向尚不存在的
+    // 目录，需先建好目录，否则打开数据库会直接失败导致采集端无法启动。
+    std::string dirError;
+    if (!keyrecord::ensureParentDirectoryExists(dbPath, &dirError)) {
+        logError("prepare database directory failed: " + dirError);
+        return false;
+    }
+
     int rc = sqlite3_open(dbPath.c_str(), &db);
     if (rc != SQLITE_OK) {
         logError("open database failed: " + std::string(db ? sqlite3_errmsg(db) : "unknown"));
