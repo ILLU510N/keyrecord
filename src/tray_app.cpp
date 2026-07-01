@@ -1,5 +1,6 @@
 #include "tray_app.h"
 
+#include "app_config.h"
 #include "key_event_writer.h"
 #include "key_names.h"
 #include "resource.h"
@@ -117,7 +118,8 @@ int runTrayApp(HINSTANCE hInstance) {
     );
 
     initKeyMap();
-    if (!startWriter()) {
+    // 数据库位置遵循配置文件（[storage] db_path / db_dir），未配置则用默认路径。
+    if (!startWriter(keyrecord::resolveDatabasePath())) {
         MessageBoxW(nullptr, L"Failed to initialize database writer", L"Error", MB_ICONERROR);
         return 1;
     }

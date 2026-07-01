@@ -29,8 +29,12 @@ std::string getConfigDir() {
     return configPath.string();
 }
 
+std::string defaultDatabaseFileName() {
+    return "keyrecord.db";
+}
+
 std::string getDefaultDatabasePath() {
-    return (std::filesystem::path(getConfigDir()) / "keyrecord.db").string();
+    return (std::filesystem::path(getConfigDir()) / defaultDatabaseFileName()).string();
 }
 
 } // namespace keyrecord

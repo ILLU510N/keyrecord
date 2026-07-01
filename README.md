@@ -39,6 +39,8 @@ src/
   main.cpp                    # Windows GUI 入口
   tray_app.*                  # 托盘、隐藏窗口、键盘 Hook
   key_event_writer.*          # SQLite 写入队列和批量落库
+  config_path.*               # 配置目录与默认数据库路径解析
+  app_config.*                # INI 配置文件解析（监听地址/端口、数据库位置）
   key_names.*                 # Windows VK code 到按键名映射
   readonly_database.*         # 可视化服务只读 SQLite 连接
   api_queries.*               # /api/* 查询和 JSON 输出
@@ -62,8 +64,9 @@ visualize/public/
 
 当前 CMake 目标按功能拆分为：
 
-- `keyrecord_capture`：采集端基础能力，包含 `key_names.*` 与 `key_event_writer.*`
+- `keyrecord_capture`：采集端基础能力，包含 `key_names.*`、`key_event_writer.*`、`config_path.*` 与 `app_config.*`
 - `config_path_tests`：默认数据库目录和目录自动创建规则
+- `app_config_tests`：INI 配置文件解析、配置项优先级与数据库路径解析
 - `keyrecord_visualization_core`：可视化查询核心，包含 `keyboard_layout.*`、`api_queries.*`、`readonly_database.*`
 - `keyrecord_resources`：静态资源索引与 MIME 识别
 - `keyrecord_http`：请求目标到静态资源/API 的适配层
@@ -90,7 +93,7 @@ pwsh.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -File .\build.ps1
 
 - CMake 配置到 `build/`
 - 构建 `Release` 下的 `keyrecord_release_package`
-- 生成 `build/keyrecord-windows-x64.zip`，包含 `keyrecord.exe`、运行所需 DLL，以及在启用 Boost.Beast/Asio 时一并包含 `keyrecord_server.exe`
+- 生成 `build/keyrecord-windows-x64.zip`，包含 `keyrecord.exe`、运行所需 DLL、配置示例 `config.example.ini`，以及在启用 Boost.Beast/Asio 时一并包含 `keyrecord_server.exe`
 - 构建 `Debug` 下的 `keyrecord_debug_tests` 并执行 `ctest`
 
 仅构建、不跑测试：
@@ -133,7 +136,27 @@ ctest --test-dir build -C Debug --output-on-failure
 - HTTP 路由适配层的静态资源、API query 参数、CORS、OPTIONS、404、405
 - 可视化服务运行时的只读库打开失败处理，以及静态资源/API 请求转发
 - 服务端入口参数解析、默认数据库路径、启动前数据库打开和启动 banner 生成
+- 配置文件（`config.ini`）的 INI 解析、配置项优先级、`db_dir`/`db_path` 与端口合法性校验
 - 可视化服务只读 SQLite 连接
+
+## 配置文件（可选）
+
+采集端与服务端都会读取 `~/.config/keyrecord/config.ini`（即 `%USERPROFILE%\.config\keyrecord\config.ini`）。
+该文件是可选的：不存在时全部使用内置默认值。优先级为 **内置默认值 < 配置文件 < 命令行参数**。
+
+```ini
+[server]
+address = 0.0.0.0      # 服务端监听地址，默认 0.0.0.0
+port    = 3000         # 服务端监听端口，默认 3000（取值 1..65535）
+
+[storage]
+db_path = D:/data/keyrecord/keyrecord.db   # 数据库文件完整路径
+# db_dir = D:/data/keyrecord               # 或只给目录，文件名固定 keyrecord.db（db_path 优先于 db_dir）
+```
+
+- 以 `#` 或 `;` 开头的整行是注释；节名与键名大小写不敏感；非法或多余的项会被忽略。
+- `[server]` 仅对 `keyrecord_server` 生效；`[storage]` 的数据库位置对采集端与服务端同时生效。
+- 完整带注释的示例见 `resources/config.example.ini`，该文件也会随 Release zip 一起分发，可复制到 `~/.config/keyrecord/config.ini` 后修改。
 
 ## 运行
 
@@ -159,7 +182,7 @@ ctest --test-dir build -C Debug --output-on-failure
 .\build\Release\keyrecord_server.exe
 ```
 
-默认访问地址为 `http://127.0.0.1:3000/`。默认读取 `%USERPROFILE%\.config\keyrecord\keyrecord.db`；也可以通过第一个参数显式指定数据库路径。如果你修改了 `visualize/public/` 下的静态资源，需要重新执行构建以刷新内嵌资源索引。
+默认访问地址为 `http://127.0.0.1:3000/`。默认读取 `%USERPROFILE%\.config\keyrecord\keyrecord.db`；也可以通过第一个参数显式指定数据库路径，或在 `config.ini` 中配置监听地址、端口与数据库位置（详见「配置文件」一节）。如果你修改了 `visualize/public/` 下的静态资源，需要重新执行构建以刷新内嵌资源索引。
 
 ### 停止程序
 

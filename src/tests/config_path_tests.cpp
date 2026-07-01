@@ -94,6 +94,8 @@ int main() {
     const auto actualDbPath = std::filesystem::path(keyrecord::getDefaultDatabasePath());
     ok = expectPathEqual(actualDbPath, expectedDbPath, "Default database file should be inside the config directory") && ok;
 
+    ok = expect(keyrecord::defaultDatabaseFileName() == "keyrecord.db", "Default database file name should be keyrecord.db") && ok;
+
     std::filesystem::remove_all(tempHome);
     return ok ? 0 : 1;
 }
