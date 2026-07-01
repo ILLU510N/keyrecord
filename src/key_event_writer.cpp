@@ -25,6 +25,8 @@ struct KeyEvent {
 
 sqlite3* db = nullptr;
 sqlite3_stmt* insertStmt = nullptr;
+sqlite3_stmt* upsertDailyKeyStmt = nullptr;
+sqlite3_stmt* upsertDailyHourStmt = nullptr;
 std::mutex queueMutex;
 std::condition_variable queueCv;
 std::deque<KeyEvent> keyQueue;
@@ -47,9 +49,19 @@ bool execSQL(const char* sql) {
     return true;
 }
 
+bool backfillSummaryTables();
+
 bool initDB(const std::string& dbPath) {
     if (db) {
         return true;
+    }
+
+    // sqlite3_open 不会创建缺失的父目录；若配置的 db_path/db_dir 指向尚不存在的
+    // 目录，需先建好目录，否则打开数据库会直接失败导致采集端无法启动。
+    std::string dirError;
+    if (!keyrecord::ensureParentDirectoryExists(dbPath, &dirError)) {
+        logError("prepare database directory failed: " + dirError);
+        return false;
     }
 
     int rc = sqlite3_open(dbPath.c_str(), &db);
@@ -71,9 +83,24 @@ bool initDB(const std::string& dbPath) {
                  "hour INTEGER,"
                  "vk_code INTEGER,"
                  "key_name TEXT);") ||
+        !execSQL("CREATE TABLE IF NOT EXISTS daily_key_stats("
+                 "date TEXT NOT NULL,"
+                 "vk_code INTEGER NOT NULL,"
+                 "key_name TEXT NOT NULL,"
+                 "count INTEGER NOT NULL DEFAULT 0,"
+                 "PRIMARY KEY(date, vk_code, key_name));") ||
+        !execSQL("CREATE TABLE IF NOT EXISTS daily_hour_stats("
+                 "date TEXT NOT NULL,"
+                 "hour INTEGER NOT NULL,"
+                 "count INTEGER NOT NULL DEFAULT 0,"
+                 "PRIMARY KEY(date, hour));") ||
         !execSQL("CREATE INDEX IF NOT EXISTS idx_keys_date ON keys(date);") ||
         !execSQL("CREATE INDEX IF NOT EXISTS idx_keys_date_vk_name ON keys(date, vk_code, key_name);") ||
         !execSQL("CREATE INDEX IF NOT EXISTS idx_keys_key_name_vk_code ON keys(key_name, vk_code);")) {
+        return false;
+    }
+
+    if (!backfillSummaryTables()) {
         return false;
     }
 
@@ -85,10 +112,44 @@ bool initDB(const std::string& dbPath) {
         return false;
     }
 
+    const char* upsertDailyKeySql =
+        "INSERT INTO daily_key_stats(date,vk_code,key_name,count) VALUES(?,?,?,1) "
+        "ON CONFLICT(date,vk_code,key_name) DO UPDATE SET count = count + 1";
+    rc = sqlite3_prepare_v2(db, upsertDailyKeySql, -1, &upsertDailyKeyStmt, nullptr);
+    if (rc != SQLITE_OK) {
+        logError("prepare daily key summary SQL failed: " + std::string(sqlite3_errmsg(db)));
+        return false;
+    }
+
+    const char* upsertDailyHourSql =
+        "INSERT INTO daily_hour_stats(date,hour,count) VALUES(?,?,1) "
+        "ON CONFLICT(date,hour) DO UPDATE SET count = count + 1";
+    rc = sqlite3_prepare_v2(db, upsertDailyHourSql, -1, &upsertDailyHourStmt, nullptr);
+    if (rc != SQLITE_OK) {
+        logError("prepare daily hour summary SQL failed: " + std::string(sqlite3_errmsg(db)));
+        return false;
+    }
+
     return true;
 }
 
 void closeDB() {
+    if (upsertDailyHourStmt) {
+        int rc = sqlite3_finalize(upsertDailyHourStmt);
+        if (rc != SQLITE_OK) {
+            logError("finalize daily hour summary statement failed: " + std::string(sqlite3_errmsg(db)));
+        }
+        upsertDailyHourStmt = nullptr;
+    }
+
+    if (upsertDailyKeyStmt) {
+        int rc = sqlite3_finalize(upsertDailyKeyStmt);
+        if (rc != SQLITE_OK) {
+            logError("finalize daily key summary statement failed: " + std::string(sqlite3_errmsg(db)));
+        }
+        upsertDailyKeyStmt = nullptr;
+    }
+
     if (insertStmt) {
         int rc = sqlite3_finalize(insertStmt);
         if (rc != SQLITE_OK) {
@@ -113,6 +174,67 @@ bool bindText(sqlite3_stmt* stmt, int index, const std::string& value) {
         logError("Failed to bind text parameter: " + std::string(sqlite3_errmsg(db)));
         return false;
     }
+    return true;
+}
+
+bool backfillSummaryTables() {
+    // 只补齐缺失汇总行，避免未来明细归档后覆盖长期保留的汇总结果。
+    return execSQL("INSERT OR IGNORE INTO daily_key_stats(date,vk_code,key_name,count) "
+                   "SELECT date,vk_code,key_name,COUNT(*) FROM keys "
+                   "WHERE date IS NOT NULL AND vk_code IS NOT NULL AND key_name IS NOT NULL "
+                   "GROUP BY date,vk_code,key_name;") &&
+           execSQL("INSERT OR IGNORE INTO daily_hour_stats(date,hour,count) "
+                   "SELECT date,hour,COUNT(*) FROM keys "
+                   "WHERE date IS NOT NULL AND hour IS NOT NULL "
+                   "GROUP BY date,hour;");
+}
+
+bool resetStatement(sqlite3_stmt* stmt, const char* label) {
+    int rc = sqlite3_reset(stmt);
+    if (rc != SQLITE_OK) {
+        logError("Failed to reset " + std::string(label) + " statement: " + std::string(sqlite3_errmsg(db)));
+        return false;
+    }
+
+    rc = sqlite3_clear_bindings(stmt);
+    if (rc != SQLITE_OK) {
+        logError("Failed to clear " + std::string(label) + " bindings: " + std::string(sqlite3_errmsg(db)));
+        return false;
+    }
+
+    return true;
+}
+
+bool updateSummaries(const char* date, int hour, DWORD vkCode, const std::string& keyName) {
+    if (!resetStatement(upsertDailyKeyStmt, "daily key summary")) {
+        return false;
+    }
+    if (!bindText(upsertDailyKeyStmt, 1, date) ||
+        sqlite3_bind_int(upsertDailyKeyStmt, 2, static_cast<int>(vkCode)) != SQLITE_OK ||
+        !bindText(upsertDailyKeyStmt, 3, keyName)) {
+        logError("Failed to bind daily key summary parameters: " + std::string(sqlite3_errmsg(db)));
+        return false;
+    }
+    int rc = sqlite3_step(upsertDailyKeyStmt);
+    if (rc != SQLITE_DONE) {
+        logError("Failed to update daily key summary: " + std::string(sqlite3_errmsg(db)));
+        return false;
+    }
+
+    if (!resetStatement(upsertDailyHourStmt, "daily hour summary")) {
+        return false;
+    }
+    if (!bindText(upsertDailyHourStmt, 1, date) ||
+        sqlite3_bind_int(upsertDailyHourStmt, 2, hour) != SQLITE_OK) {
+        logError("Failed to bind daily hour summary parameters: " + std::string(sqlite3_errmsg(db)));
+        return false;
+    }
+    rc = sqlite3_step(upsertDailyHourStmt);
+    if (rc != SQLITE_DONE) {
+        logError("Failed to update daily hour summary: " + std::string(sqlite3_errmsg(db)));
+        return false;
+    }
+
     return true;
 }
 
@@ -157,7 +279,7 @@ bool insertEvent(const KeyEvent& event) {
         return false;
     }
 
-    return true;
+    return updateSummaries(date, local.tm_hour, event.vkCode, keyName);
 }
 
 bool writeBatch(const std::vector<KeyEvent>& batch) {

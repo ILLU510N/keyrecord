@@ -12,6 +12,16 @@ const App = {
     this.initTheme();
     CalendarHeatmap.init();
     KeyboardHeatmap.init();
+    if (window.Analysis) {
+      Analysis.init();
+      Analysis.configureLive(
+        () => ({ ...this.currentRange }),
+        async () => {
+          if (window.ApiCache) ApiCache.invalidateApi();
+          await this.refreshRangeData({ forceAnalysis: true });
+        }
+      );
+    }
 
     CalendarHeatmap.setDateSelectHandler((date) => {
       this.setDateRange(date, date);
@@ -131,9 +141,7 @@ const App = {
 
   async loadDatabaseInfo() {
     try {
-      const response = await fetch('/api/info');
-      if (!response.ok) throw new Error('获取数据库信息失败');
-      const info = await response.json();
+      const info = await ApiCache.fetchJson('/api/info');
       document.getElementById('total-keys').textContent = info.total_keys.toLocaleString();
       document.getElementById('data-range').textContent = info.first_date && info.last_date
         ? info.first_date + ' ~ ' + info.last_date
@@ -254,7 +262,7 @@ const App = {
     await this.refreshRangeData();
   },
 
-  async refreshRangeData() {
+  async refreshRangeData(options) {
     const { start, end } = this.currentRange;
 
     if (!this.validateDateRange(start, end)) {
@@ -268,6 +276,9 @@ const App = {
         this.loadTopKeys(start, end)
       ]);
     });
+    if (window.Analysis && Analysis.isRangeActive()) {
+      await Analysis.update(start, end, { force: options && options.forceAnalysis });
+    }
     this.setFilterStatus('当前范围: ' + this.formatRangeLabel(start, end));
   },
 
@@ -276,10 +287,7 @@ const App = {
     this.setTopKeysRangeLabel(startDate, endDate);
 
     try {
-      const response = await fetch(this.buildTopKeysUrl(startDate, endDate));
-      if (!response.ok) throw new Error('API 请求失败: ' + response.status);
-
-      const keys = await response.json();
+      const keys = await ApiCache.fetchJson(this.buildTopKeysUrl(startDate, endDate));
       const keyRows = Array.isArray(keys) ? keys : [];
       this.topKeys = keyRows;
       this.renderTopKeys(keyRows);

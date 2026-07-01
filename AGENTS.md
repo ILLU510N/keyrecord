@@ -2,7 +2,7 @@
 
 ## Project Structure & Module Organization
 
-This is a Windows C++20/CMake project for keyboard capture and local visualization. Core source files live in `src/`. Capture-side code includes `tray_app.*`, `key_event_writer.*`, `key_names.*`, and `config_path.*`. Visualization/server code includes `readonly_database.*`, `api_queries.*`, `http_router.*`, `visualization_service.*`, `server.*`, and `server_main.cpp`. Unit-style executable tests live in `src/tests/`.
+This is a Windows C++20/CMake project for keyboard capture and local visualization. Core source files live in `src/`. Capture-side code includes `tray_app.*`, `key_event_writer.*`, `key_names.*`, `config_path.*`, and `app_config.*` (optional `config.ini` parsing for listen address/port and database location). Visualization/server code includes `readonly_database.*`, `api_queries.*`, `http_router.*`, `visualization_service.*`, `server.*`, and `server_main.cpp`. Unit-style executable tests live in `src/tests/`.
 
 Static web assets are kept in `visualize/public/` and embedded during CMake generation. CMake helper scripts are in `cmake/`. Documentation and planning notes belong in `doc/`. `archive/node-server/visualize/` contains the retired Node.js visualization server; avoid changing it unless maintaining archived behavior.
 

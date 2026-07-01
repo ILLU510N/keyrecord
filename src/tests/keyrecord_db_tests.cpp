@@ -20,6 +20,19 @@ bool hasIndex(sqlite3* database, const char* indexName) {
     return rc == SQLITE_ROW;
 }
 
+bool hasTable(sqlite3* database, const char* tableName) {
+    sqlite3_stmt* stmt = nullptr;
+    const char* sql = "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ? LIMIT 1";
+    if (sqlite3_prepare_v2(database, sql, -1, &stmt, nullptr) != SQLITE_OK) {
+        std::cerr << "Failed to prepare table lookup: " << sqlite3_errmsg(database) << "\n";
+        return false;
+    }
+    sqlite3_bind_text(stmt, 1, tableName, -1, SQLITE_TRANSIENT);
+    const int rc = sqlite3_step(stmt);
+    sqlite3_finalize(stmt);
+    return rc == SQLITE_ROW;
+}
+
 bool singleQuoteKeyWasInserted(sqlite3* database) {
     sqlite3_stmt* stmt = nullptr;
     const char* sql = "SELECT COUNT(*) FROM keys WHERE key_name = ?";
@@ -34,6 +47,71 @@ bool singleQuoteKeyWasInserted(sqlite3* database) {
     }
     sqlite3_finalize(stmt);
     return count == 1;
+}
+
+bool legacySummaryWasBackfilled(sqlite3* database) {
+    sqlite3_stmt* stmt = nullptr;
+    const char* sql =
+        "SELECT count FROM daily_key_stats WHERE date = '2026-01-02' AND vk_code = 65 AND key_name = 'A'";
+    if (sqlite3_prepare_v2(database, sql, -1, &stmt, nullptr) != SQLITE_OK) {
+        std::cerr << "Failed to prepare legacy summary lookup: " << sqlite3_errmsg(database) << "\n";
+        return false;
+    }
+    const bool ok = sqlite3_step(stmt) == SQLITE_ROW && sqlite3_column_int(stmt, 0) == 1;
+    sqlite3_finalize(stmt);
+    return ok;
+}
+
+bool summaryMatchesInsertedSingleQuote(sqlite3* database) {
+    sqlite3_stmt* stmt = nullptr;
+    const char* keySql = "SELECT date, hour, vk_code, key_name FROM keys WHERE key_name = ? LIMIT 1";
+    if (sqlite3_prepare_v2(database, keySql, -1, &stmt, nullptr) != SQLITE_OK) {
+        std::cerr << "Failed to prepare inserted key lookup: " << sqlite3_errmsg(database) << "\n";
+        return false;
+    }
+    sqlite3_bind_text(stmt, 1, "'", -1, SQLITE_TRANSIENT);
+
+    std::string date;
+    int hour = -1;
+    int vkCode = -1;
+    std::string keyName;
+    if (sqlite3_step(stmt) == SQLITE_ROW) {
+        const unsigned char* dateText = sqlite3_column_text(stmt, 0);
+        const unsigned char* keyText = sqlite3_column_text(stmt, 3);
+        date = dateText ? reinterpret_cast<const char*>(dateText) : "";
+        hour = sqlite3_column_int(stmt, 1);
+        vkCode = sqlite3_column_int(stmt, 2);
+        keyName = keyText ? reinterpret_cast<const char*>(keyText) : "";
+    }
+    sqlite3_finalize(stmt);
+
+    if (date.empty() || keyName.empty()) {
+        return false;
+    }
+
+    const char* keySummarySql =
+        "SELECT count FROM daily_key_stats WHERE date = ? AND vk_code = ? AND key_name = ?";
+    if (sqlite3_prepare_v2(database, keySummarySql, -1, &stmt, nullptr) != SQLITE_OK) {
+        std::cerr << "Failed to prepare daily key summary lookup: " << sqlite3_errmsg(database) << "\n";
+        return false;
+    }
+    sqlite3_bind_text(stmt, 1, date.c_str(), -1, SQLITE_TRANSIENT);
+    sqlite3_bind_int(stmt, 2, vkCode);
+    sqlite3_bind_text(stmt, 3, keyName.c_str(), -1, SQLITE_TRANSIENT);
+    bool ok = sqlite3_step(stmt) == SQLITE_ROW && sqlite3_column_int(stmt, 0) == 1;
+    sqlite3_finalize(stmt);
+
+    const char* hourSummarySql = "SELECT count FROM daily_hour_stats WHERE date = ? AND hour = ?";
+    if (sqlite3_prepare_v2(database, hourSummarySql, -1, &stmt, nullptr) != SQLITE_OK) {
+        std::cerr << "Failed to prepare daily hour summary lookup: " << sqlite3_errmsg(database) << "\n";
+        return false;
+    }
+    sqlite3_bind_text(stmt, 1, date.c_str(), -1, SQLITE_TRANSIENT);
+    sqlite3_bind_int(stmt, 2, hour);
+    ok = (sqlite3_step(stmt) == SQLITE_ROW && sqlite3_column_int(stmt, 0) == 1) && ok;
+    sqlite3_finalize(stmt);
+
+    return ok;
 }
 
 bool journalModeIsWal(sqlite3* database) {
@@ -51,6 +129,30 @@ bool journalModeIsWal(sqlite3* database) {
     return isWal;
 }
 
+bool createLegacyKeysOnlyDatabase(const std::filesystem::path& dbPath) {
+    sqlite3* database = nullptr;
+    if (sqlite3_open(dbPath.string().c_str(), &database) != SQLITE_OK) {
+        return false;
+    }
+
+    const bool ok = sqlite3_exec(
+                        database,
+                        "CREATE TABLE keys("
+                        "id INTEGER PRIMARY KEY AUTOINCREMENT,"
+                        "timestamp INTEGER,"
+                        "date TEXT,"
+                        "hour INTEGER,"
+                        "vk_code INTEGER,"
+                        "key_name TEXT);"
+                        "INSERT INTO keys(timestamp,date,hour,vk_code,key_name) VALUES"
+                        "(1767312000,'2026-01-02',5,65,'A');",
+                        nullptr,
+                        nullptr,
+                        nullptr) == SQLITE_OK;
+    sqlite3_close(database);
+    return ok;
+}
+
 } // namespace
 
 int main() {
@@ -58,6 +160,11 @@ int main() {
     std::filesystem::remove(dbPath);
     std::filesystem::remove(dbPath.string() + "-wal");
     std::filesystem::remove(dbPath.string() + "-shm");
+
+    if (!createLegacyKeysOnlyDatabase(dbPath)) {
+        std::cerr << "Failed to create legacy test database\n";
+        return 1;
+    }
 
     initKeyMap();
     if (!startWriter(dbPath.string())) {
@@ -80,7 +187,11 @@ int main() {
     ok = ok && hasIndex(database, "idx_keys_date");
     ok = ok && hasIndex(database, "idx_keys_date_vk_name");
     ok = ok && hasIndex(database, "idx_keys_key_name_vk_code");
+    ok = ok && hasTable(database, "daily_key_stats");
+    ok = ok && hasTable(database, "daily_hour_stats");
     ok = ok && singleQuoteKeyWasInserted(database);
+    ok = ok && legacySummaryWasBackfilled(database);
+    ok = ok && summaryMatchesInsertedSingleQuote(database);
 
     sqlite3_close(database);
     std::filesystem::remove(dbPath);

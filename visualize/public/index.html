@@ -115,7 +115,7 @@
       </div>
 
       <div class="analysis-grid">
-        <div class="analysis-card">
+        <div class="analysis-card analysis-card--wide">
           <h3>小时级热力图（星期 × 小时）</h3>
           <div id="hourly-heatmap" class="hourly-heatmap" aria-label="星期与小时热力图"></div>
         </div>
@@ -141,7 +141,7 @@
 
         <div class="analysis-card">
           <h3>多键组合统计</h3>
-          <div class="table-scroll">
+          <div class="table-scroll combo-scroll">
             <table class="combo-table">
               <thead>
                 <tr><th scope="col">组合</th><th scope="col">次数</th></tr>
@@ -213,6 +213,7 @@
     </section>
   </div>
   <footer><p>KeyRecord Visualization</p></footer>
+  <script src="js/api_cache.js"></script>
   <script src="js/calendar.js"></script>
   <script src="js/keyboard.js"></script>
   <script src="js/analysis.js"></script>
