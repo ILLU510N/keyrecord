@@ -120,6 +120,35 @@ cmake --build build --config Release --target keyrecord_release_package
 MSBuild.exe build\keyrecord.vcxproj /p:Configuration=Release /p:Platform=x64
 ```
 
+## 跨平台构建（实验性）
+
+构建系统已支持 **win-x64 / linux-x64 / darwin-arm64** 三个目标，统一入口为 `CMakePresets.json`。
+
+> 当前范围：Linux/macOS 会构建可视化服务端（`keyrecord_server`）、可视化核心与全部可移植测试；采集端（键盘 Hook + 托盘）目前仅 Windows 提供，Linux（evdev）/ macOS（CGEventTap）采集后端正在推进。完整方案与进度见 `doc/cross_platform_build_plan.md`。
+
+依赖安装：
+
+- Windows：vcpkg（classic 模式）`vcpkg install sqlite3:x64-windows boost-asio:x64-windows boost-beast:x64-windows`
+- Linux：`sudo apt-get install -y ninja-build libsqlite3-dev libboost-dev`
+- macOS：`brew install ninja sqlite boost`
+
+使用 presets 配置、构建与测试（Linux 示例，macOS 改用 `macos-arm64`）：
+
+```bash
+cmake --preset linux-x64
+cmake --build --preset linux-x64-release   # 生成 build/keyrecord-linux-x64.tar.gz
+cmake --build --preset linux-x64-tests
+ctest --preset linux-x64
+```
+
+Windows 既可用 `build.ps1`，也可用 presets：
+
+```powershell
+cmake --preset windows-x64
+cmake --build --preset windows-x64-release
+ctest --preset windows-x64
+```
+
 ## 测试
 
 ```powershell

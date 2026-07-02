@@ -1,0 +1,90 @@
+{
+  "version": 2,
+  "cmakeMinimumRequired": {
+    "major": 3,
+    "minor": 20,
+    "patch": 0
+  },
+  "configurePresets": [
+    {
+      "name": "windows-x64",
+      "displayName": "Windows x64 (MSVC)",
+      "generator": "Visual Studio 17 2022",
+      "architecture": "x64",
+      "binaryDir": "${sourceDir}/build"
+    },
+    {
+      "name": "linux-x64",
+      "displayName": "Linux x64",
+      "generator": "Ninja Multi-Config",
+      "binaryDir": "${sourceDir}/build"
+    },
+    {
+      "name": "macos-arm64",
+      "displayName": "macOS arm64",
+      "generator": "Ninja Multi-Config",
+      "binaryDir": "${sourceDir}/build",
+      "cacheVariables": {
+        "CMAKE_OSX_ARCHITECTURES": "arm64"
+      }
+    }
+  ],
+  "buildPresets": [
+    {
+      "name": "windows-x64-release",
+      "configurePreset": "windows-x64",
+      "configuration": "Release",
+      "targets": ["keyrecord_release_package"]
+    },
+    {
+      "name": "windows-x64-tests",
+      "configurePreset": "windows-x64",
+      "configuration": "Debug",
+      "targets": ["keyrecord_debug_tests"]
+    },
+    {
+      "name": "linux-x64-release",
+      "configurePreset": "linux-x64",
+      "configuration": "Release",
+      "targets": ["keyrecord_release_package"]
+    },
+    {
+      "name": "linux-x64-tests",
+      "configurePreset": "linux-x64",
+      "configuration": "Debug",
+      "targets": ["keyrecord_debug_tests"]
+    },
+    {
+      "name": "macos-arm64-release",
+      "configurePreset": "macos-arm64",
+      "configuration": "Release",
+      "targets": ["keyrecord_release_package"]
+    },
+    {
+      "name": "macos-arm64-tests",
+      "configurePreset": "macos-arm64",
+      "configuration": "Debug",
+      "targets": ["keyrecord_debug_tests"]
+    }
+  ],
+  "testPresets": [
+    {
+      "name": "windows-x64",
+      "configurePreset": "windows-x64",
+      "configuration": "Debug",
+      "output": { "outputOnFailure": true }
+    },
+    {
+      "name": "linux-x64",
+      "configurePreset": "linux-x64",
+      "configuration": "Debug",
+      "output": { "outputOnFailure": true }
+    },
+    {
+      "name": "macos-arm64",
+      "configurePreset": "macos-arm64",
+      "configuration": "Debug",
+      "output": { "outputOnFailure": true }
+    }
+  ]
+}

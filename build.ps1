@@ -10,6 +10,7 @@ param(
 
     [string]$BoostIncludeDir,
     [string]$Generator,
+    [string]$Platform,
     [switch]$SkipTests
 )
 
@@ -69,6 +70,10 @@ try {
 
     if ($Generator) {
         $configureArgs += @("-G", $Generator)
+    }
+
+    if ($Platform) {
+        $configureArgs += @("-A", $Platform)
     }
 
     if ($BoostIncludeDir) {

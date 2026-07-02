@@ -1,4 +1,4 @@
-name: CMake on a single platform
+name: CMake cross-platform build
 
 on:
   push:
@@ -6,21 +6,34 @@ on:
   pull_request:
     branches: [ "main" ]
 
-env:
-  BUILD_TYPE: Release
-  VCPKG_DEFAULT_TRIPLET: x64-windows
-
 jobs:
   build:
-    runs-on: windows-2022
-    defaults:
-      run:
-        shell: pwsh
+    name: ${{ matrix.name }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: windows-x64
+            os: windows-2022
+            preset: windows-x64
+            package: keyrecord-windows-x64.zip
+          - name: linux-x64
+            os: ubuntu-latest
+            preset: linux-x64
+            package: keyrecord-linux-x64.tar.gz
+          - name: darwin-arm64
+            os: macos-14
+            preset: macos-arm64
+            package: keyrecord-darwin-arm64.tar.gz
 
     steps:
     - uses: actions/checkout@v4
 
-    - name: Install vcpkg dependencies
+    # Windows：沿用 classic 模式 vcpkg 安装依赖。
+    - name: Install dependencies (Windows)
+      if: runner.os == 'Windows'
+      shell: pwsh
       run: |
         $packages = @(
           "sqlite3:x64-windows"
@@ -29,17 +42,63 @@ jobs:
         )
         & "$env:VCPKG_INSTALLATION_ROOT\vcpkg.exe" install @packages
 
-    - name: Configure CMake
+    # Linux：使用系统包（CMake 回退到 FindSQLite3 / 系统 Boost 头）。
+    - name: Install dependencies (Linux)
+      if: runner.os == 'Linux'
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y ninja-build libsqlite3-dev libboost-dev
+
+    # macOS：使用 Homebrew 提供 sqlite / boost / ninja。
+    - name: Install dependencies (macOS)
+      if: runner.os == 'macOS'
+      run: brew install ninja sqlite boost
+
+    # Windows：沿用 build.ps1（classic vcpkg + VS 生成器 + Debug 测试）。
+    - name: Build and test (Windows)
+      if: runner.os == 'Windows'
+      shell: pwsh
       run: >
-        cmake -S "${{ github.workspace }}"
-        -B "${{ github.workspace }}\build"
-        -G "Visual Studio 17 2022"
-        -A x64
-        -DCMAKE_TOOLCHAIN_FILE="$env:VCPKG_INSTALLATION_ROOT\scripts\buildsystems\vcpkg.cmake"
-        -DVCPKG_TARGET_TRIPLET=${{ env.VCPKG_DEFAULT_TRIPLET }}
+        .\build.ps1
+        -Generator "Visual Studio 17 2022"
+        -Platform x64
+        -BuildConfiguration Release
+        -TestConfiguration Debug
 
-    - name: Build
-      run: cmake --build "${{ github.workspace }}\build" --config ${{ env.BUILD_TYPE }}
+    # Linux / macOS：使用 CMake presets 统一配置、构建与测试。
+    - name: Configure (Unix)
+      if: runner.os != 'Windows'
+      run: cmake --preset ${{ matrix.preset }}
 
-    - name: Test
-      run: ctest --test-dir "${{ github.workspace }}\build" -C ${{ env.BUILD_TYPE }} --output-on-failure
+    - name: Build release package (Unix)
+      if: runner.os != 'Windows'
+      run: cmake --build --preset ${{ matrix.preset }}-release
+
+    - name: Build tests (Unix)
+      if: runner.os != 'Windows'
+      run: cmake --build --preset ${{ matrix.preset }}-tests
+
+    - name: Run tests (Unix)
+      if: runner.os != 'Windows'
+      run: ctest --preset ${{ matrix.preset }}
+
+    - name: Verify release package
+      shell: bash
+      run: |
+        pkg="build/${{ matrix.package }}"
+        if [ ! -f "$pkg" ]; then
+          echo "Release package was not created: $pkg"
+          exit 1
+        fi
+        if [ ! -s "$pkg" ]; then
+          echo "Release package is empty: $pkg"
+          exit 1
+        fi
+        echo "Release package ready: $pkg ($(wc -c < "$pkg") bytes)"
+
+    - name: Upload release package
+      uses: actions/upload-artifact@v4
+      with:
+        name: ${{ matrix.name }}
+        path: build/${{ matrix.package }}
+        if-no-files-found: error

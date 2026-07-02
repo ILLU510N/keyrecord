@@ -1,11 +1,13 @@
 #include "key_event_writer.h"
 
 #include "key_names.h"
+#include "platform/platform_util.h"
 
 #include <sqlite3.h>
 
 #include <algorithm>
 #include <condition_variable>
+#include <cstdio>
 #include <deque>
 #include <exception>
 #include <mutex>
@@ -19,7 +21,7 @@ constexpr size_t BATCH_SIZE = 100;
 constexpr auto FLUSH_INTERVAL = std::chrono::seconds(1);
 
 struct KeyEvent {
-    DWORD vkCode;
+    keyrecord::KeyCode vkCode;
     std::chrono::system_clock::time_point eventTime;
 };
 
@@ -34,7 +36,7 @@ std::thread writerThread;
 bool writerStopRequested = false;
 
 void logError(const std::string& message) {
-    OutputDebugStringA(("KeyRecord: " + message + "\n").c_str());
+    keyrecord::debugLog("KeyRecord: " + message + "\n");
 }
 
 bool execSQL(const char* sql) {
@@ -205,7 +207,7 @@ bool resetStatement(sqlite3_stmt* stmt, const char* label) {
     return true;
 }
 
-bool updateSummaries(const char* date, int hour, DWORD vkCode, const std::string& keyName) {
+bool updateSummaries(const char* date, int hour, keyrecord::KeyCode vkCode, const std::string& keyName) {
     if (!resetStatement(upsertDailyKeyStmt, "daily key summary")) {
         return false;
     }
@@ -242,11 +244,11 @@ bool insertEvent(const KeyEvent& event) {
     auto epoch = event.eventTime.time_since_epoch();
     auto ts = std::chrono::duration_cast<std::chrono::seconds>(epoch).count();
     auto t = std::chrono::system_clock::to_time_t(event.eventTime);
-    tm local;
-    localtime_s(&local, &t);
+    std::tm local;
+    keyrecord::localTime(local, t);
 
     char date[32];
-    sprintf_s(date, "%04d-%02d-%02d", local.tm_year + 1900, local.tm_mon + 1, local.tm_mday);
+    std::snprintf(date, sizeof(date), "%04d-%02d-%02d", local.tm_year + 1900, local.tm_mon + 1, local.tm_mday);
     std::string keyName = getKeyName(event.vkCode);
 
     int rc = sqlite3_reset(insertStmt);
@@ -366,7 +368,7 @@ bool startWriter(const std::string& dbPath) {
     return true;
 }
 
-void enqueueKeyEvent(DWORD vkCode, std::chrono::system_clock::time_point eventTime) {
+void enqueueKeyEvent(keyrecord::KeyCode vkCode, std::chrono::system_clock::time_point eventTime) {
     {
         std::lock_guard<std::mutex> lock(queueMutex);
         if (writerStopRequested) {
