@@ -27,4 +27,12 @@ void debugLog(const std::string& message) {
 #endif
 }
 
+void showError(const std::string& message) {
+#ifdef _WIN32
+    MessageBoxA(nullptr, message.c_str(), "KeyRecord", MB_OK | MB_ICONERROR);
+#else
+    std::fputs(("KeyRecord: " + message + "\n").c_str(), stderr);
+#endif
+}
+
 } // namespace keyrecord

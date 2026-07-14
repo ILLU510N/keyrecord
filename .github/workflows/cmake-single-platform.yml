@@ -94,6 +94,27 @@ jobs:
           echo "Release package is empty: $pkg"
           exit 1
         fi
+
+        contents="$(cmake -E tar tf "$pkg")"
+        echo "$contents"
+
+        required=("config.example.ini")
+        if [ "${{ runner.os }}" = "Windows" ]; then
+          required+=("keyrecord.exe" "keyrecord_server.exe" "sqlite3.dll")
+        else
+          required+=("keyrecord" "keyrecord_server")
+        fi
+        if [ "${{ runner.os }}" = "Linux" ]; then
+          required+=("keyrecord.service")
+        fi
+
+        for file in "${required[@]}"; do
+          if ! grep -Fxq "$file" <<< "$contents"; then
+            echo "Release package is missing required file: $file"
+            exit 1
+          fi
+        done
+
         echo "Release package ready: $pkg ($(wc -c < "$pkg") bytes)"
 
     - name: Upload release package

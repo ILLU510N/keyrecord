@@ -16,6 +16,10 @@ set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(KEYRECORD_SRC_DIR "${CMAKE_CURRENT_SOURCE_DIR}/src")
 
+if(APPLE)
+    enable_language(OBJCXX)
+endif()
+
 if(EXISTS "C:/vcpkg/installed/x64-windows")
     list(APPEND CMAKE_PREFIX_PATH "C:/vcpkg/installed/x64-windows")
 endif()
@@ -206,16 +210,50 @@ else()
     message(STATUS "Boost.Beast/Asio headers not found; keyrecord_server target is disabled. Set KEYRECORD_BOOST_INCLUDE_DIR to an existing Boost include root to enable it.")
 endif()
 
-# 采集端：当前仅 Windows 提供键盘 Hook + 托盘后端；Linux/macOS 采集后端在后续阶段加入。
+# 采集端平台实现：下游统一接收 Windows VK 数值，各后端只负责原生事件循环与键码归一化。
 if(WIN32)
-    add_executable(keyrecord WIN32
-        src/main.cpp
-        src/tray_app.cpp
-        "${KEYRECORD_APP_RESOURCE_RC}"
+    set(KEYRECORD_CAPTURE_PLATFORM_SOURCES
+        src/platform/capture_backend_windows.cpp
+        src/platform/tray_windows.cpp
     )
-    target_link_libraries(keyrecord PRIVATE keyrecord_capture shell32)
-    copy_sqlite_dll(keyrecord)
+    set(KEYRECORD_EXECUTABLE_OPTIONS WIN32)
+elseif(APPLE)
+    set(KEYRECORD_CAPTURE_PLATFORM_SOURCES
+        src/platform/capture_backend_macos.mm
+        src/platform/tray_macos.mm
+    )
+    set_source_files_properties(
+        src/platform/capture_backend_macos.mm
+        src/platform/tray_macos.mm
+        PROPERTIES COMPILE_OPTIONS "-fobjc-arc"
+    )
+    find_library(KEYRECORD_APPLICATION_SERVICES_FRAMEWORK ApplicationServices REQUIRED)
+    find_library(KEYRECORD_APPKIT_FRAMEWORK AppKit REQUIRED)
+elseif(UNIX)
+    set(KEYRECORD_CAPTURE_PLATFORM_SOURCES
+        src/platform/capture_backend_linux.cpp
+        src/platform/tray_stub.cpp
+    )
+else()
+    message(FATAL_ERROR "Unsupported capture platform: ${CMAKE_SYSTEM_NAME}")
 endif()
+
+add_executable(keyrecord ${KEYRECORD_EXECUTABLE_OPTIONS}
+    src/main.cpp
+    src/tray_app.cpp
+    ${KEYRECORD_CAPTURE_PLATFORM_SOURCES}
+    ${KEYRECORD_APP_RESOURCE_RC}
+)
+target_link_libraries(keyrecord PRIVATE keyrecord_capture)
+if(WIN32)
+    target_link_libraries(keyrecord PRIVATE shell32)
+elseif(APPLE)
+    target_link_libraries(keyrecord PRIVATE
+        ${KEYRECORD_APPLICATION_SERVICES_FRAMEWORK}
+        ${KEYRECORD_APPKIT_FRAMEWORK}
+    )
+endif()
+copy_sqlite_dll(keyrecord)
 
 # 发布包锚定目标：优先采集端，其次服务端。据此推导运行目录与依赖关系。
 set(KEYRECORD_PACKAGE_ANCHOR "")
@@ -256,6 +294,13 @@ if(KEYRECORD_PACKAGE_ANCHOR)
         list(APPEND KEYRECORD_RELEASE_PACKAGE_ENV SQLITE_DLL_PATH=$<TARGET_FILE:${KEYRECORD_SQLITE_TARGET}>)
     else()
         list(APPEND KEYRECORD_RELEASE_PACKAGE_ENV SQLITE_DLL_PATH=)
+    endif()
+    if(KEYRECORD_OS_NAME STREQUAL "linux")
+        list(APPEND KEYRECORD_RELEASE_PACKAGE_ENV
+            SERVICE_FILE_PATH=${CMAKE_CURRENT_SOURCE_DIR}/packaging/keyrecord.service
+        )
+    else()
+        list(APPEND KEYRECORD_RELEASE_PACKAGE_ENV SERVICE_FILE_PATH=)
     endif()
 
     # Release 构建后生成包含采集端/服务端及运行目录依赖的归档；兼容多配置生成器。

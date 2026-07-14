@@ -242,11 +242,11 @@ strategy:
 
 | 阶段 | 内容 | 产出 / 验收 | 状态 |
 | --- | --- | --- | --- |
-| **Phase 0** | 共享代码去耦合（§4）：`key_code.h`、`virtual_keys.h`、localtime/snprintf/日志封装 | Windows 构建 + 全部 CTest 不变通过；零行为变化，可独立合入 | ✅ 代码完成（Win 构建验证见 §9） |
-| **Phase 1** | 构建系统跨平台化（§5，不含新后端）：presets、`if(WIN32)` 守卫、`cmake -E tar`、CI 加 Linux/macOS job（先只构建 server + 可移植测试） | Linux/macOS 上 `keyrecord_server` + 可视化核心 + 现有可移植测试全部通过 | ✅ 代码完成（CI 验证待跑，见 §9） |
-| **Phase 2** | Linux 采集后端：`capture_backend_linux.cpp`（evdev）+ keycode→VK 表 + 信号收尾 + headless/systemd | Linux 上 `keyrecord` 采集入库，前端展示正常 | 🚧 进行中（接口 + 映射表已完成并跨平台测试；evdev 后端 + 拆分待验证，见 §9） |
-| **Phase 3** | macOS 采集后端：`capture_backend_macos.mm`（CGEventTap）+ keycode→VK 表 + TCC 授权引导 + NSStatusBar + `.app` 打包 | macOS(arm64) 上采集入库，前端展示正常 | 🚧 进行中（映射表已完成并跨平台测试；CGEventTap 后端 + 托盘待验证，见 §9） |
-| **Phase 4** | 收尾：三平台 README（构建/运行/权限说明）、三平台 release artifact、CI 全量上传 | 三平台产物齐全 | 🚧 进行中（README 跨平台构建段已加；权限说明 + 三平台产物待验证，见 §9） |
+| **Phase 0** | 共享代码去耦合（§4）：`key_code.h`、`virtual_keys.h`、localtime/snprintf/日志封装 | Windows 构建 + 全部 CTest 不变通过；零行为变化，可独立合入 | ✅ 已完成并通过 Windows 构建验证（见 §9） |
+| **Phase 1** | 构建系统跨平台化（§5）：presets、`if(WIN32)` 守卫、`cmake -E tar`、CI 三平台矩阵 | 三平台服务端、采集端和可移植测试可构建 | 🚧 Windows 已验证；Linux/macOS CI 待跑（见 §9） |
+| **Phase 2** | Linux 采集后端：`capture_backend_linux.cpp`（evdev）+ keycode→VK 表 + 信号收尾 + headless/systemd | Linux 上 `keyrecord` 采集入库，前端展示正常 | 🚧 代码完成；Linux 编译与运行验证待跑（见 §9） |
+| **Phase 3** | macOS 采集后端：`capture_backend_macos.mm`（CGEventTap）+ keycode→VK 表 + Input Monitoring + NSStatusBar | macOS(arm64) 上采集入库，前端展示正常 | 🚧 代码完成；macOS 编译、授权与运行验证待跑（见 §9） |
+| **Phase 4** | 收尾：三平台 README（构建/运行/权限说明）、三平台 release artifact、CI 全量上传 | 三平台产物齐全 | 🚧 文档与打包逻辑完成；Linux/macOS artifact 待 CI 验证（见 §9） |
 
 ---
 
@@ -259,15 +259,20 @@ strategy:
 - **时区 / 线程安全**：`localtime_r`/`localtime_s` 均线程安全；保持本地时区语义与现状一致。
 - **托盘可选化**：Linux 默认 headless，避免强依赖 GTK，降低移植面。
 
+关键 API 依据：
+- Linux Kernel Input 文档：https://docs.kernel.org/input/event-codes.html（`EV_KEY` 的 0/1/2 分别表示释放、按下、自动重复）。
+- Apple `CGEventTapCreate`：https://developer.apple.com/documentation/coregraphics/cgevent/tapcreate(tap:place:options:eventsofinterest:callback:userinfo:)
+- Apple Input Monitoring 预检/请求：https://developer.apple.com/documentation/coregraphics/cgpreflightlisteneventaccess() 、https://developer.apple.com/documentation/coregraphics/cgrequestlisteneventaccess()
+
 ---
 
 ## 8. 改动文件速查
 
-**新增**：`src/platform/{key_code.h, virtual_keys.h, platform_util.h/.cpp, capture_backend.h, capture_backend_windows.cpp, capture_backend_linux.cpp, capture_backend_macos.mm, tray.h, tray_windows.cpp, tray_macos.mm, tray_stub.cpp}`、根 `vcpkg.json`、`CMakePresets.json`、（可选）`build.sh`、`packaging/keyrecord.service`（systemd）。
+**新增**：`src/platform/{key_code.h, virtual_keys.h, platform_util.h/.cpp, capture_backend.h, capture_backend_windows.cpp, capture_backend_linux.cpp, capture_backend_macos.mm, linux_keymap.h, macos_keymap.h, tray.h, tray_windows.cpp, tray_macos.mm, tray_stub.cpp}`、`CMakePresets.json`、`packaging/keyrecord.service`（systemd）。
 
-**修改**：`CMakeLists.txt`（平台守卫 + 源文件选择 + 打包名）、`cmake/PackageRelease.cmake`（`cmake -E tar`）、`.github/workflows/cmake-single-platform.yml`（矩阵）、`key_names.h/.cpp`、`key_event_writer.h/.cpp`、`main.cpp`、`src/tests/keyrecord_db_tests.cpp`。
+**修改**：`CMakeLists.txt`（平台守卫 + 源文件选择 + 打包名）、`cmake/PackageRelease.cmake`（`cmake -E tar`）、`.github/workflows/cmake-single-platform.yml`（矩阵）、`README.md`、`key_names.h/.cpp`、`key_event_writer.h/.cpp`、`main.cpp`、`tray_app.h/.cpp`、`src/tests/keyrecord_db_tests.cpp`。
 
-**拆分**：`tray_app.cpp/.h` → `capture_backend_windows.cpp` + `tray_windows.cpp`。
+**拆分**：`tray_app.cpp/.h` 仅保留跨平台生命周期协调；Windows Hook/托盘分别迁移到 `capture_backend_windows.cpp` 与 `tray_windows.cpp`。
 
 **保持不变（重要）**：`key_classification.*`、`keyboard_layout.*`、`api_queries.*`、`readonly_database.*`、`http_router.*`、`visualization_service.*`、`server*.cpp`、`app_config.*`、`config_path.*`、`embedded_resources.*` 及前端 `visualize/public/**`。
 
@@ -292,8 +297,8 @@ strategy:
 - `src/tests/virtual_keys_tests.cpp`（新增，注册为 CTest 用例 `virtual_keys_tests`）：用 `static_assert` 锁定关键 `vk::*` 数值契约；仅依赖 `virtual_keys.h`，三平台均可编译，作为跨平台后端归一化的回归护栏。
 
 **验证**
-- 静态：grep 确认共享代码已无 `DWORD`/`VK_*`/`sprintf_s`/`localtime_s`/`OutputDebugString` 泄漏，仅 `platform_util.cpp` 的 `#ifdef _WIN32` 分支保留（预期内）；`tray_app.*` 仍含 `<windows.h>`（Windows-only 采集/托盘，留待 Phase 2/3 迁移到平台层）。
-- 动态：Windows 本地 `build.ps1`（Release 打包 + Debug CTest）验证——因会话内工具链安全分类器暂时不可用而挂起，恢复后补跑；预期零行为变化。
+- 静态：共享代码与 `tray_app.*` 已无 `DWORD`/`VK_*`/`sprintf_s`/`localtime_s`/`OutputDebugString`/`windows.h` 泄漏；Win32 API 仅保留在 `main.cpp` 与 `src/platform/*_windows.cpp`。
+- 动态（2026-07-14）：复用现有 Visual Studio 18 2026 构建目录执行 `build.ps1`，Release 包 `keyrecord-windows-x64.zip` 生成成功，Debug CTest 16/16 通过。
 
 ### Phase 1 — 构建系统跨平台化（2026-07-02，✅ 代码完成）
 
@@ -315,54 +320,55 @@ strategy:
 
 **与原方案的偏差（重要）**
 - 原 §5.2 建议根目录加 `vcpkg.json` 清单模式；实施时**暂不引入**。原因：一旦仓库根存在 `vcpkg.json` 且启用 vcpkg 工具链，vcpkg 会切换到 manifest 模式并在 build 目录重新编译 Boost，破坏现有本地/CI 的 classic-mode Windows 构建（也拖慢速度）。改为让 CMake 依赖发现**同时兼容** classic vcpkg（Windows）与系统包（Linux apt / macOS brew），CI 分平台安装依赖。待需要可复现依赖锁定时再引入 `vcpkg.json`（届时用 `VCPKG_MANIFEST_MODE` 或独立 preset 隔离）。
-- Phase 1 范围内，Linux/macOS **仅构建服务端 + 可视化核心 + 可移植测试**；采集端 `keyrecord` 仍为 Windows-only，Linux/macOS 后端见 Phase 2/3。
+- Phase 1 初始提交仅构建 Linux/macOS 服务端；2026-07-14 接入 Phase 2/3 后，`keyrecord` 采集目标已扩展到三平台。
 
 **验证**
 - 静态：`CMakeLists.txt` 逐行走查 Windows 路径，确认工具链、SQLite 目标、`keyrecord-windows-x64.zip` 包名、`keyrecord`/服务端目标与打包依赖均与改造前一致。
-- 动态：Windows 本地构建与 Linux/macOS CI——同因分类器不可用而挂起，恢复后补跑。
+- 动态（2026-07-14）：Windows Release 打包与 Debug CTest 16/16 通过；Linux/macOS CI 尚未触发，不据此宣称目标平台已验证。
 
-### Phase 2 — Linux 采集后端（2026-07-02，🚧 进行中）
+### Phase 2 — Linux 采集后端（2026-07-14，🚧 代码完成，待目标机验证）
 
 已完成的 build-neutral、可跨平台验证部分（不触碰 Windows 采集构建路径）：
 - `src/platform/capture_backend.h`（新增）：采集端平台抽象接口 `runCaptureLoop(callback)` / `requestStopCapture()`；回调携带的键码约定为「已归一化的 Windows VK 数值」。各平台后端拥有各自事件循环。
 - `src/platform/linux_keymap.h`（新增）：`constexpr KeyCode linuxEvdevToVk(int)`，把 evdev `KEY_*` 全量映射到 Windows VK（返回 0 表示未映射）。纯数值、零 Linux 头依赖，可在任意平台编译测试。这是 Linux 后端最核心、最易错的交付物。
 - `src/tests/linux_keymap_tests.cpp`（新增，CTest 用例 `linux_keymap_tests`）：`static_assert` 锁定字母/数字/控制/修饰/符号/导航/小键盘及未映射的代表性条目。
 
-待完成部分（需真实构建/系统能力，留待编译验证恢复后作为一个可验证单元实施）：
-- `src/platform/capture_backend_linux.cpp`：打开 `/dev/input/event*`、读取 `input_event`、过滤按下事件、`linuxEvdevToVk` 归一化后回调；`SIGINT`/`SIGTERM` → `requestStopCapture()`。
-- 把现有 `tray_app.cpp` 拆分为 `capture_backend_windows.cpp` + `tray_windows.cpp`，统一到 `capture_backend.h` 接口（改动 Windows 构建，必须在可编译环境验证）。
-- Linux headless 常驻（`tray_stub.cpp`）+ systemd user service 单元；CMake 按平台选择采集端源文件并把 `keyrecord` 可执行目标扩展到 Linux。
+2026-07-14 完成：
+- `src/platform/capture_backend_linux.cpp`：枚举并筛选键盘 `/dev/input/event*`，使用 `poll` 读取 `EV_KEY`，处理按下与自动重复，归一化后携带 evdev 事件时间回调。
+- `SIGINT`/`SIGTERM` 使用 lock-free `atomic_flag` 请求停止；设备读错误或断开时关闭对应 fd，全部设备断开则 fail-fast。
+- Windows 原实现已拆为 `capture_backend_windows.cpp` + `tray_windows.cpp`，并通过 Windows 构建验证。
+- Linux 使用 `tray_stub.cpp` headless 运行；新增 `packaging/keyrecord.service`，并随 Linux release 包分发。
+- CMake 在 Linux 构建 `keyrecord` 采集端并与 `keyrecord_server` 一起打包。
 
 **验证**
 - 静态：`linux_keymap.h` 映射逐条对照 `linux/input-event-codes.h` 与 `virtual_keys.h`；`linux_keymap_tests` 覆盖关键条目。
-- 动态：`virtual_keys_tests` / `linux_keymap_tests` 为纯头、可移植用例，将随下次任一平台构建一并执行；evdev 后端需 Linux 运行时验证。
+- 动态：Windows 上 `virtual_keys_tests` / `linux_keymap_tests` 已通过；本机无 WSL/Linux 环境，evdev 后端的 Linux 编译、权限与真实输入验证仍待 CI/目标机完成。
 
-### Phase 3 — macOS 采集后端（2026-07-02，🚧 进行中）
+### Phase 3 — macOS 采集后端（2026-07-14，🚧 代码完成，待目标机验证）
 
 已完成的 build-neutral、可跨平台验证部分：
 - `src/platform/macos_keymap.h`（新增）：`constexpr KeyCode macVirtualKeyToVk(int)`，把 macOS 虚拟键码（Carbon `kVK_*`）全量映射到 Windows VK；归一化约定 Command→Win、Option→Alt，主键区 Delete→退格、ForwardDelete→删除。纯数值、零 macOS 头依赖。
 - `src/tests/macos_keymap_tests.cpp`（新增，CTest 用例 `macos_keymap_tests`）：`static_assert` 锁定字母/数字/控制/修饰/符号/导航/小键盘/功能键及未映射的代表性条目。
 
-待完成部分（需真实构建 / macOS 授权能力）：
-- `src/platform/capture_backend_macos.mm`：`CGEventTap` 监听 `kCGEventKeyDown`，运行于 `CFRunLoop`；用 `macVirtualKeyToVk` 归一化后回调；`requestStopCapture` → `CFRunLoopStop`。
-- 首启 `AXIsProcessTrusted()` 检测并引导用户在「辅助功能 / 输入监控」授权（TCC）。
-- `NSStatusBar` 托盘（`tray_macos.mm`，Objective-C++）；CMake `enable_language(OBJCXX)` + 链接 `ApplicationServices`/`Carbon`/`AppKit`；可选 `.app` 打包。
+2026-07-14 完成：
+- `src/platform/capture_backend_macos.mm`：使用 listen-only `CGEventTap` 监听 `kCGEventKeyDown`，在 AppKit 主事件循环中派发事件，并在 Tap 超时/用户输入禁用后重新启用。
+- 使用权限范围更窄且与监听行为对应的 `CGPreflightListenEventAccess` / `CGRequestListenEventAccess` 请求“输入监控”，不额外申请辅助功能权限。
+- `SIGINT`/`SIGTERM` 由 CFRunLoop timer 安全转换为主线程停止；状态栏退出通过 `requestStopCapture()` 停止事件循环。
+- `tray_macos.mm` 使用 `NSStatusBar` 与系统键盘符号；CMake 启用 OBJCXX、ARC，并链接 `ApplicationServices`/`AppKit`。
 
 **验证**
 - 静态：`macos_keymap.h` 逐条对照 Carbon `Events.h` 与 `virtual_keys.h`；`macos_keymap_tests` 覆盖关键条目。
-- 动态：`macos_keymap_tests` 为纯头可移植用例，随下次任一平台构建执行；CGEventTap 后端需 macOS 运行时验证。
+- 动态：Windows 上 `macos_keymap_tests` 已通过；当前无 macOS arm64 环境，Objective-C++ 编译、TCC 授权、状态栏菜单和真实输入仍待 CI/目标机验证。
 
-### Phase 4 — 收尾（2026-07-02，🚧 进行中）
+### Phase 4 — 收尾（2026-07-14，🚧 目标平台验证待完成）
 
 已完成：
-- `README.md`：新增「跨平台构建（实验性）」小节，说明三平台目标、`CMakePresets.json` 用法、各平台依赖安装（vcpkg / apt / brew），并明确当前范围（Linux/macOS 构建服务端 + 可移植测试，采集端仍 Windows-only）。
+- `README.md`：同步三平台能力、依赖、presets、运行/停止方式、Linux `input` 组权限与 systemd user service、macOS Input Monitoring 授权。
+- 发布包脚本会在 Linux artifact 中加入 `keyrecord.service`；三平台包均以采集端为锚点，同时包含可用的 `keyrecord_server`。
+- CI 已配置 Windows/Linux/macOS 构建、测试、归档校验与 artifact 上传。
 
-待完成：
-- 三平台运行/权限说明（Linux `input` 组、macOS TCC 授权）随各自采集后端落地后补齐。
-- 三平台 release artifact 与 CI 全量上传的实际验证（依赖编译验证恢复）。
+### 待办：目标平台验证
 
-### 待办：编译验证（阻塞中）
-
-本次会话内，Windows 本地 `build.ps1` 与三平台 CI 均**尚未实际执行**，原因是会话内工具链安全分类器暂时不可用（与代码无关的临时环境问题）。恢复后应依次：
-1. Windows：`build.ps1 -Generator "Visual Studio 17 2022" -Platform x64`，确认 Release 打包 + 全部 CTest（含新增 `virtual_keys_tests` / `linux_keymap_tests` / `macos_keymap_tests`）通过 → 将 Phase 0/1 状态更新为「已验证」。
-2. Linux/macOS：推送触发 CI 矩阵，确认服务端 + 可视化核心 + 可移植测试通过、发布归档生成 → 将 Phase 1 状态更新为「已验证」。
+1. Linux CI：确认 `keyrecord`、`keyrecord_server`、16 个测试与 `keyrecord-linux-x64.tar.gz`；在有 `input` 权限的 Linux 目标机确认真实按键写入与 `SIGTERM` 收尾。
+2. macOS CI：确认 Objective-C++/ARC、系统框架链接、16 个测试与 `keyrecord-darwin-arm64.tar.gz`；在 arm64 目标机确认 Input Monitoring 授权、状态栏退出和真实按键写入。
+3. 只有上述目标平台证据均通过后，才能把 Phase 1/2/3/4 标记为完成。

@@ -3,142 +3,30 @@
 #include "app_config.h"
 #include "key_event_writer.h"
 #include "key_names.h"
-#include "resource.h"
+#include "platform/capture_backend.h"
+#include "platform/platform_util.h"
+#include "platform/tray.h"
 
-#include <shellapi.h>
-
-#include <chrono>
-
-namespace {
-
-HHOOK hook = nullptr;
-HWND hwnd = nullptr;
-NOTIFYICONDATA nid = {};
-constexpr UINT WM_TRAYICON = WM_USER + 1;
-constexpr UINT ID_TRAY_EXIT = 1001;
-
-LRESULT CALLBACK KeyboardProc(int code, WPARAM wParam, LPARAM lParam) {
-    if (code == HC_ACTION && wParam == WM_KEYDOWN) {
-        KBDLLHOOKSTRUCT* kb = reinterpret_cast<KBDLLHOOKSTRUCT*>(lParam);
-        enqueueKeyEvent(kb->vkCode, std::chrono::system_clock::now());
-    }
-    return CallNextHookEx(hook, code, wParam, lParam);
-}
-
-HICON loadTrayIcon(HINSTANCE hInstance) {
-    // 托盘使用小尺寸图标，优先从多尺寸 .ico 资源中取系统推荐尺寸。
-    auto icon = static_cast<HICON>(LoadImageW(
-        hInstance,
-        MAKEINTRESOURCEW(IDI_KEYRECORD),
-        IMAGE_ICON,
-        GetSystemMetrics(SM_CXSMICON),
-        GetSystemMetrics(SM_CYSMICON),
-        LR_DEFAULTCOLOR | LR_SHARED
-    ));
-
-    if (icon) {
-        return icon;
-    }
-
-    return LoadIconW(nullptr, IDI_APPLICATION);
-}
-
-void createTrayIcon(HINSTANCE hInstance, HWND windowHandle) {
-    nid.cbSize = sizeof(NOTIFYICONDATA);
-    nid.hWnd = windowHandle;
-    nid.uID = 1;
-    nid.uFlags = NIF_ICON | NIF_MESSAGE | NIF_TIP;
-    nid.uCallbackMessage = WM_TRAYICON;
-    nid.hIcon = loadTrayIcon(hInstance);
-    wcscpy_s(nid.szTip, 128, L"KeyRecord Running");
-    Shell_NotifyIcon(NIM_ADD, &nid);
-}
-
-void removeTrayIcon() {
-    Shell_NotifyIcon(NIM_DELETE, &nid);
-}
-
-void cleanup() {
-    if (hook) {
-        UnhookWindowsHookEx(hook);
-        hook = nullptr;
-    }
-    stopWriter();
-    removeTrayIcon();
-}
-
-LRESULT CALLBACK WndProc(HWND windowHandle, UINT msg, WPARAM wParam, LPARAM lParam) {
-    switch (msg) {
-        case WM_TRAYICON:
-            if (lParam == WM_RBUTTONUP) {
-                POINT pt;
-                GetCursorPos(&pt);
-                HMENU hMenu = CreatePopupMenu();
-                AppendMenuW(hMenu, MF_STRING, ID_TRAY_EXIT, L"Exit");
-                SetForegroundWindow(windowHandle);
-                TrackPopupMenu(hMenu, TPM_BOTTOMALIGN | TPM_LEFTALIGN, pt.x, pt.y, 0, windowHandle, nullptr);
-                DestroyMenu(hMenu);
-            }
-            break;
-        case WM_COMMAND:
-            if (LOWORD(wParam) == ID_TRAY_EXIT) {
-                PostQuitMessage(0);
-            }
-            break;
-        case WM_DESTROY:
-            cleanup();
-            PostQuitMessage(0);
-            break;
-        default:
-            return DefWindowProc(windowHandle, msg, wParam, lParam);
-    }
-    return 0;
-}
-
-} // namespace
-
-int runTrayApp(HINSTANCE hInstance) {
-    // 创建隐藏窗口用于接收托盘菜单和退出消息。
-    WNDCLASSW wc = {};
-    wc.lpfnWndProc = WndProc;
-    wc.hInstance = hInstance;
-    wc.lpszClassName = L"KeyRecordClass";
-    RegisterClassW(&wc);
-
-    hwnd = CreateWindowExW(
-        0,
-        L"KeyRecordClass",
-        L"KeyRecord",
-        0,
-        0, 0, 0, 0,
-        HWND_MESSAGE,
-        nullptr,
-        hInstance,
-        nullptr
-    );
-
+int runKeyrecordApp() {
     initKeyMap();
     // 数据库位置遵循配置文件（[storage] db_path / db_dir），未配置则用默认路径。
     if (!startWriter(keyrecord::resolveDatabasePath())) {
-        MessageBoxW(nullptr, L"Failed to initialize database writer", L"Error", MB_ICONERROR);
+        keyrecord::showError("Failed to initialize database writer");
         return 1;
     }
 
-    hook = SetWindowsHookEx(WH_KEYBOARD_LL, KeyboardProc, nullptr, 0);
-    if (!hook) {
+    if (!keyrecord::initializeTray([] {
+            keyrecord::requestStopCapture();
+        })) {
         stopWriter();
-        MessageBoxW(nullptr, L"Failed to set keyboard hook", L"Error", MB_ICONERROR);
+        keyrecord::showError("Failed to initialize tray integration");
         return 1;
     }
 
-    createTrayIcon(hInstance, hwnd);
-
-    MSG msg;
-    while (GetMessage(&msg, nullptr, 0, 0)) {
-        TranslateMessage(&msg);
-        DispatchMessage(&msg);
-    }
-
-    cleanup();
-    return 0;
+    int result = keyrecord::runCaptureLoop([](keyrecord::KeyCode vkCode, auto eventTime) {
+        enqueueKeyEvent(vkCode, eventTime);
+    });
+    keyrecord::shutdownTray();
+    stopWriter();
+    return result;
 }

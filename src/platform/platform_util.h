@@ -12,4 +12,7 @@ void localTime(std::tm& out, std::time_t value);
 // 调试日志输出：Windows 走 OutputDebugString，其它平台写入 stderr。
 void debugLog(const std::string& message);
 
+// 向用户显示不可恢复的启动错误：Windows 使用消息框，其它平台写入 stderr。
+void showError(const std::string& message);
+
 } // namespace keyrecord

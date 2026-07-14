@@ -1,0 +1,11 @@
+[Unit]
+Description=KeyRecord keyboard capture service
+
+[Service]
+Type=simple
+ExecStart=%h/.local/bin/keyrecord
+Restart=on-failure
+RestartSec=2
+
+[Install]
+WantedBy=default.target
