@@ -51,7 +51,7 @@ bool initializeTray(TrayExitCallback callback) {
             NSImage* icon = [NSImage
                 imageWithSystemSymbolName:@"keyboard"
                 accessibilityDescription:@"KeyRecord"];
-            icon.template = YES;
+            [icon setTemplate:YES];
             statusItem.button.image = icon;
         } else {
             statusItem.button.title = @"KR";

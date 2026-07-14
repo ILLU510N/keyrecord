@@ -95,7 +95,7 @@ jobs:
           exit 1
         fi
 
-        contents="$(cmake -E tar tf "$pkg")"
+        contents="$(cmake -E tar tf "$pkg" | sed 's#^\./##')"
         echo "$contents"
 
         required=("config.example.ini")
