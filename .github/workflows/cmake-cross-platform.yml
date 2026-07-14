@@ -1,0 +1,125 @@
+name: CMake cross-platform build
+
+on:
+  push:
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
+
+jobs:
+  build:
+    name: ${{ matrix.name }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: windows-x64
+            os: windows-2022
+            preset: windows-x64
+            package: keyrecord-windows-x64.zip
+          - name: linux-x64
+            os: ubuntu-latest
+            preset: linux-x64
+            package: keyrecord-linux-x64.tar.gz
+          - name: darwin-arm64
+            os: macos-14
+            preset: macos-arm64
+            package: keyrecord-darwin-arm64.tar.gz
+
+    steps:
+    - uses: actions/checkout@v4
+
+    # Windows：沿用 classic 模式 vcpkg 安装依赖。
+    - name: Install dependencies (Windows)
+      if: runner.os == 'Windows'
+      shell: pwsh
+      run: |
+        $packages = @(
+          "sqlite3:x64-windows"
+          "boost-asio:x64-windows"
+          "boost-beast:x64-windows"
+        )
+        & "$env:VCPKG_INSTALLATION_ROOT\vcpkg.exe" install @packages
+
+    # Linux：使用系统包（CMake 回退到 FindSQLite3 / 系统 Boost 头）。
+    - name: Install dependencies (Linux)
+      if: runner.os == 'Linux'
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y ninja-build libsqlite3-dev libboost-dev
+
+    # macOS：使用 Homebrew 提供 sqlite / boost / ninja。
+    - name: Install dependencies (macOS)
+      if: runner.os == 'macOS'
+      run: brew install ninja sqlite boost
+
+    # Windows：沿用 build.ps1（classic vcpkg + VS 生成器 + Debug 测试）。
+    - name: Build and test (Windows)
+      if: runner.os == 'Windows'
+      shell: pwsh
+      run: >
+        .\build.ps1
+        -Generator "Visual Studio 17 2022"
+        -Platform x64
+        -BuildConfiguration Release
+        -TestConfiguration Debug
+
+    # Linux / macOS：使用 CMake presets 统一配置、构建与测试。
+    - name: Configure (Unix)
+      if: runner.os != 'Windows'
+      run: cmake --preset ${{ matrix.preset }}
+
+    - name: Build release package (Unix)
+      if: runner.os != 'Windows'
+      run: cmake --build --preset ${{ matrix.preset }}-release
+
+    - name: Build tests (Unix)
+      if: runner.os != 'Windows'
+      run: cmake --build --preset ${{ matrix.preset }}-tests
+
+    - name: Run tests (Unix)
+      if: runner.os != 'Windows'
+      run: ctest --preset ${{ matrix.preset }}
+
+    - name: Verify release package
+      shell: bash
+      run: |
+        pkg="build/${{ matrix.package }}"
+        if [ ! -f "$pkg" ]; then
+          echo "Release package was not created: $pkg"
+          exit 1
+        fi
+        if [ ! -s "$pkg" ]; then
+          echo "Release package is empty: $pkg"
+          exit 1
+        fi
+
+        contents="$(cmake -E tar tf "$pkg" | sed 's#^\./##')"
+        echo "$contents"
+
+        required=("config.example.ini")
+        if [ "${{ runner.os }}" = "Windows" ]; then
+          required+=("keyrecord.exe" "keyrecord_server.exe" "sqlite3.dll")
+        else
+          required+=("keyrecord" "keyrecord_server")
+        fi
+        if [ "${{ runner.os }}" = "Linux" ]; then
+          required+=("keyrecord.service")
+        fi
+
+        for file in "${required[@]}"; do
+          if ! grep -Fxq "$file" <<< "$contents"; then
+            echo "Release package is missing required file: $file"
+            exit 1
+          fi
+        done
+
+        echo "Release package ready: $pkg ($(wc -c < "$pkg") bytes)"
+
+    - name: Upload release package
+      uses: actions/upload-artifact@v4
+      with:
+        name: ${{ matrix.name }}
+        path: build/${{ matrix.package }}
+        if-no-files-found: error

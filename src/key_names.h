@@ -1,11 +1,8 @@
 #pragma once
 
-#ifndef NOMINMAX
-#define NOMINMAX
-#endif
-#include <windows.h>
+#include "platform/key_code.h"
 
 #include <string>
 
 void initKeyMap();
-std::string getKeyName(DWORD vkCode);
+std::string getKeyName(keyrecord::KeyCode vkCode);

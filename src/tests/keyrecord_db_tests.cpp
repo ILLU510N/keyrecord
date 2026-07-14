@@ -1,5 +1,6 @@
 #include "../key_event_writer.h"
 #include "../key_names.h"
+#include "../platform/virtual_keys.h"
 
 #include <filesystem>
 #include <iostream>
@@ -173,7 +174,7 @@ int main() {
     }
 
     const auto eventTime = std::chrono::system_clock::from_time_t(1767139200);
-    enqueueKeyEvent(VK_OEM_7, eventTime);
+    enqueueKeyEvent(keyrecord::vk::Oem7, eventTime);
     stopWriter();
 
     sqlite3* database = nullptr;
