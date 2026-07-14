@@ -243,10 +243,10 @@ strategy:
 | 阶段 | 内容 | 产出 / 验收 | 状态 |
 | --- | --- | --- | --- |
 | **Phase 0** | 共享代码去耦合（§4）：`key_code.h`、`virtual_keys.h`、localtime/snprintf/日志封装 | Windows 构建 + 全部 CTest 不变通过；零行为变化，可独立合入 | ✅ 已完成并通过 Windows 构建验证（见 §9） |
-| **Phase 1** | 构建系统跨平台化（§5）：presets、`if(WIN32)` 守卫、`cmake -E tar`、CI 三平台矩阵 | 三平台服务端、采集端和可移植测试可构建 | 🚧 Windows 已验证；Linux/macOS CI 待跑（见 §9） |
-| **Phase 2** | Linux 采集后端：`capture_backend_linux.cpp`（evdev）+ keycode→VK 表 + 信号收尾 + headless/systemd | Linux 上 `keyrecord` 采集入库，前端展示正常 | 🚧 代码完成；Linux 编译与运行验证待跑（见 §9） |
-| **Phase 3** | macOS 采集后端：`capture_backend_macos.mm`（CGEventTap）+ keycode→VK 表 + Input Monitoring + NSStatusBar | macOS(arm64) 上采集入库，前端展示正常 | 🚧 代码完成；macOS 编译、授权与运行验证待跑（见 §9） |
-| **Phase 4** | 收尾：三平台 README（构建/运行/权限说明）、三平台 release artifact、CI 全量上传 | 三平台产物齐全 | 🚧 文档与打包逻辑完成；Linux/macOS artifact 待 CI 验证（见 §9） |
+| **Phase 1** | 构建系统跨平台化（§5）：presets、`if(WIN32)` 守卫、`cmake -E tar`、CI 三平台矩阵 | 三平台服务端、采集端和可移植测试可构建 | ✅ 三平台 CI 构建与 16/16 测试通过（见 §9） |
+| **Phase 2** | Linux 采集后端：`capture_backend_linux.cpp`（evdev）+ keycode→VK 表 + 信号收尾 + headless/systemd | Linux 上 `keyrecord` 采集入库，前端展示正常 | 🚧 Linux 编译、测试与产物通过；evdev 实机采集待验证（见 §9） |
+| **Phase 3** | macOS 采集后端：`capture_backend_macos.mm`（CGEventTap）+ keycode→VK 表 + Input Monitoring + NSStatusBar | macOS(arm64) 上采集入库，前端展示正常 | 🚧 macOS 编译、测试与产物通过；TCC/状态栏/实机采集待验证（见 §9） |
+| **Phase 4** | 收尾：三平台 README（构建/运行/权限说明）、三平台 release artifact、CI 全量上传 | 三平台产物齐全 | ✅ 三平台 artifact 已校验并上传（见 §9） |
 
 ---
 
@@ -324,7 +324,7 @@ strategy:
 
 **验证**
 - 静态：`CMakeLists.txt` 逐行走查 Windows 路径，确认工具链、SQLite 目标、`keyrecord-windows-x64.zip` 包名、`keyrecord`/服务端目标与打包依赖均与改造前一致。
-- 动态（2026-07-14）：Windows Release 打包与 Debug CTest 16/16 通过；Linux/macOS CI 尚未触发，不据此宣称目标平台已验证。
+- 动态（2026-07-14）：PR #2 的 Actions run `29335322108` 三平台全部通过；Windows、Linux、macOS 均完成 Release 打包、Debug CTest 16/16、归档内容断言和 artifact 上传。
 
 ### Phase 2 — Linux 采集后端（2026-07-14，🚧 代码完成，待目标机验证）
 
@@ -342,7 +342,7 @@ strategy:
 
 **验证**
 - 静态：`linux_keymap.h` 映射逐条对照 `linux/input-event-codes.h` 与 `virtual_keys.h`；`linux_keymap_tests` 覆盖关键条目。
-- 动态：Windows 上 `virtual_keys_tests` / `linux_keymap_tests` 已通过；本机无 WSL/Linux 环境，evdev 后端的 Linux 编译、权限与真实输入验证仍待 CI/目标机完成。
+- 动态：Linux CI 已编译 evdev 后端并通过 16/16 测试，`keyrecord-linux-x64.tar.gz` 内容校验通过；CI 无法访问宿主机键盘设备，evdev 权限、真实按键写入与 `SIGTERM` 刷盘仍待 Linux 目标机验证。
 
 ### Phase 3 — macOS 采集后端（2026-07-14，🚧 代码完成，待目标机验证）
 
@@ -358,17 +358,18 @@ strategy:
 
 **验证**
 - 静态：`macos_keymap.h` 逐条对照 Carbon `Events.h` 与 `virtual_keys.h`；`macos_keymap_tests` 覆盖关键条目。
-- 动态：Windows 上 `macos_keymap_tests` 已通过；当前无 macOS arm64 环境，Objective-C++ 编译、TCC 授权、状态栏菜单和真实输入仍待 CI/目标机验证。
+- 动态：macOS arm64 CI 已编译 Objective-C++/ARC 后端并通过 16/16 测试，`keyrecord-darwin-arm64.tar.gz` 内容校验通过；CI 无交互式 TCC 和键盘输入，Input Monitoring 授权、状态栏退出和真实按键写入仍待目标机验证。
 
-### Phase 4 — 收尾（2026-07-14，🚧 目标平台验证待完成）
+### Phase 4 — 收尾（2026-07-14，✅ 完成）
 
 已完成：
 - `README.md`：同步三平台能力、依赖、presets、运行/停止方式、Linux `input` 组权限与 systemd user service、macOS Input Monitoring 授权。
 - 发布包脚本会在 Linux artifact 中加入 `keyrecord.service`；三平台包均以采集端为锚点，同时包含可用的 `keyrecord_server`。
 - CI 已配置 Windows/Linux/macOS 构建、测试、归档校验与 artifact 上传。
+- PR #2 / Actions run `29335322108` 已生成并上传三个未过期 artifact：`windows-x64`（1,001,115 字节）、`linux-x64`（408,806 字节）、`darwin-arm64`（312,174 字节）。
 
 ### 待办：目标平台验证
 
-1. Linux CI：确认 `keyrecord`、`keyrecord_server`、16 个测试与 `keyrecord-linux-x64.tar.gz`；在有 `input` 权限的 Linux 目标机确认真实按键写入与 `SIGTERM` 收尾。
-2. macOS CI：确认 Objective-C++/ARC、系统框架链接、16 个测试与 `keyrecord-darwin-arm64.tar.gz`；在 arm64 目标机确认 Input Monitoring 授权、状态栏退出和真实按键写入。
-3. 只有上述目标平台证据均通过后，才能把 Phase 1/2/3/4 标记为完成。
+1. Linux 目标机：在有 `input` 权限的环境确认真实按键写入、VK 映射在前端正确展示，以及 `SIGTERM` 刷盘收尾。
+2. macOS arm64 目标机：确认 Input Monitoring 首启授权、状态栏退出、真实按键写入及 VK 映射在前端正确展示。
+3. 只有上述实机证据通过后，才能把 Phase 2/3 标记为完成。
