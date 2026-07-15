@@ -2,9 +2,9 @@
 
 ## Project Structure & Module Organization
 
-This is a Windows C++20/CMake project for keyboard capture and local visualization. Core source files live in `src/`. Capture-side code includes `tray_app.*`, `key_event_writer.*`, `key_names.*`, `config_path.*`, and `app_config.*` (optional `config.ini` parsing for listen address/port and database location). Visualization/server code includes `readonly_database.*`, `api_queries.*`, `http_router.*`, `visualization_service.*`, `server.*`, and `server_main.cpp`. Unit-style executable tests live in `src/tests/`.
+This is a cross-platform C++20/CMake project for local keyboard-event capture and visualization. It supports Windows x64, Linux x64, and macOS arm64. Core source files live in `src/`. Capture-side code includes `tray_app.*`, `key_event_writer.*`, `config_path.*`, `app_config.*`, and `platform/` (native capture, tray/menu-bar integration, and key-code mapping). Visualization/server code includes `readonly_database.*`, `api_queries.*`, `key_classification.*`, `keyboard_layout.*`, `embedded_resources.*`, `http_router.*`, `visualization_service.*`, `server_bootstrap.*`, `server_startup.*`, `server_response_adapter.*`, `server.*`, and `server_main.cpp`. Unit-style executable tests live in `src/tests/`.
 
-Static web assets are kept in `visualize/public/` and embedded during CMake generation. CMake helper scripts are in `cmake/`. Documentation and planning notes belong in `doc/`. `archive/node-server/visualize/` contains the retired Node.js visualization server; avoid changing it unless maintaining archived behavior.
+Static web assets are kept in `visualize/public/` and embedded during CMake generation. CMake helper scripts are in `cmake/`; platform packaging files are in `packaging/`; cross-platform CI and release automation are in `.github/workflows/`. Documentation belongs in `doc/`. `archive/node-server/visualize/` contains the retired Node.js visualization server; avoid changing it unless maintaining archived behavior.
 
 ## Build, Test, and Development Commands
 
@@ -15,8 +15,9 @@ Static web assets are kept in `visualize/public/` and embedded during CMake gene
 - `cmake --build build --config Debug --target keyrecord_debug_tests` builds the full Debug test set manually.
 - `ctest --test-dir build -C Debug --output-on-failure` runs the configured test suite.
 - `.\build\Release\keyrecord_server.exe` starts the visualization server at `http://127.0.0.1:3000/`.
+- `cmake --preset linux-x64` / `macos-arm64`, followed by the corresponding build and test presets, builds and tests Unix targets. Packages are `keyrecord-linux-x64.tar.gz` and `keyrecord-darwin-arm64.tar.gz`.
 
-Dependencies are CMake 3.20+, MSVC, vcpkg SQLite3, and Boost.Asio/Beast headers for `keyrecord_server`.
+Dependencies are CMake 3.20+, a C++20 compiler, SQLite3, and Boost.Asio/Beast headers for `keyrecord_server`. Windows uses MSVC and vcpkg; Linux and macOS use system package managers in CI.
 
 ## Coding Style & Naming Conventions
 

@@ -1,11 +1,16 @@
-# KeyRecord - 跨平台键盘敲击记录工具
+# KeyRecord - 跨平台键盘按键记录与可视化工具
 
-记录 Windows 10/11、Linux 和 macOS 键盘敲击，统计每日和每小时热力值，并记录每个按键的详细信息。
+[English](README.en.md) | 中文
+
+在 Windows 10/11、Linux 和 macOS 上本地记录键盘事件，写入 SQLite 数据库，并通过内嵌 Web 页面展示按键统计和键盘热力图。
+
+> 本项目会记录键盘输入。请仅在你拥有设备和数据使用权限的环境中运行，并妥善保护数据库文件。
 
 ## 功能特性
 
 - **后台运行**：Windows/macOS 提供托盘或状态栏入口，Linux 默认以 headless 服务运行
 - **平台原生采集**：Windows 使用低级键盘 Hook，Linux 使用 evdev，macOS 使用 CGEventTap
+- **本地可视化**：内嵌静态页面和只读 HTTP 服务，无需 Node.js 运行时
 - **基础统计**：记录每次按键的时间戳、日期和小时
 - **按键识别**：记录每个按键的虚拟键码（vk_code）和键名（key_name）
 - **支持的按键类型**：
@@ -45,6 +50,7 @@ src/
   config_path.*               # 配置目录与默认数据库路径解析
   app_config.*                # INI 配置文件解析（监听地址/端口、数据库位置）
   key_names.*                 # Windows VK code 到按键名映射
+  key_classification.*        # 按键分类
   readonly_database.*         # 可视化服务只读 SQLite 连接
   api_queries.*               # /api/* 查询和 JSON 输出
   keyboard_layout.*           # 键盘热力图坐标映射
@@ -125,9 +131,9 @@ MSBuild.exe build\keyrecord.vcxproj /p:Configuration=Release /p:Platform=x64
 
 ## 跨平台构建（实验性）
 
-构建系统已支持 **win-x64 / linux-x64 / darwin-arm64** 三个目标，统一入口为 `CMakePresets.json`。
+构建系统支持 **Windows x64 / Linux x64 / macOS arm64** 三个目标，统一入口为 `CMakePresets.json`；GitHub Actions 会在三个目标平台构建、测试并验证发布包。
 
-采集端已按平台接入 Windows `WH_KEYBOARD_LL`、Linux evdev 和 macOS CGEventTap；三者入库前都会归一化为 Windows VK 数值，以保持数据库、统计逻辑和前端键盘布局契约不变。Windows 已完成本地构建与测试，Linux/macOS 由 CI 目标机执行构建验证。完整方案与进度见 `doc/cross_platform_build_plan.md`。
+采集端已按平台接入 Windows `WH_KEYBOARD_LL`、Linux evdev 和 macOS CGEventTap；三者入库前都会归一化为 Windows VK 数值，以保持数据库、统计逻辑和前端键盘布局契约不变。
 
 依赖安装：
 
@@ -242,7 +248,7 @@ db_path = D:/data/keyrecord/keyrecord.db
 .\build\Release\keyrecord_server.exe
 ```
 
-默认访问地址为 `http://127.0.0.1:3000/`。默认读取 `%USERPROFILE%\.config\keyrecord\keyrecord.db`；也可以通过第一个参数显式指定数据库路径，或在 `config.ini` 中配置监听地址、端口与数据库位置（详见「配置文件」一节）。如果你修改了 `visualize/public/` 下的静态资源，需要重新执行构建以刷新内嵌资源索引。
+默认监听地址为 `http://0.0.0.0:3000/`。默认读取 `%USERPROFILE%\.config\keyrecord\keyrecord.db`；也可以通过第一个参数显式指定数据库路径，或在 `config.ini` 中配置监听地址、端口与数据库位置（详见「配置文件」一节）。如果你修改了 `visualize/public/` 下的静态资源，需要重新执行构建以刷新内嵌资源索引。
 
 ### 停止程序
 
