@@ -86,7 +86,8 @@ try {
     $buildArgs = @(
         "--build", $buildDirPath,
         "--config", $BuildConfiguration,
-        "--target", "keyrecord_release_package"
+        "--target", "keyrecord_release_package",
+        "--parallel"
     )
     Invoke-Step -Name "构建发布入口目标（$BuildConfiguration）" -FilePath $cmakePath -ArgumentList $buildArgs
 
@@ -98,7 +99,8 @@ try {
     $buildTestArgs = @(
         "--build", $buildDirPath,
         "--config", $TestConfiguration,
-        "--target", "keyrecord_debug_tests"
+        "--target", "keyrecord_debug_tests",
+        "--parallel"
     )
     Invoke-Step -Name "编译测试目标聚合入口（$TestConfiguration）" -FilePath $cmakePath -ArgumentList $buildTestArgs
 

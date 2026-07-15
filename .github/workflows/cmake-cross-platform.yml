@@ -3,6 +3,7 @@ name: CMake cross-platform build
 on:
   push:
     branches: [ "main" ]
+    tags: [ "v*" ]
   pull_request:
     branches: [ "main" ]
 
@@ -30,6 +31,24 @@ jobs:
     steps:
     - uses: actions/checkout@v4
 
+    # Windows：缓存 vcpkg 默认二进制归档，避免每次从源码构建依赖。
+    - name: Read vcpkg version (Windows)
+      if: runner.os == 'Windows'
+      id: vcpkg-version
+      shell: pwsh
+      run: |
+        $versionText = & "$env:VCPKG_INSTALLATION_ROOT\vcpkg.exe" version |
+          Select-Object -First 1
+        $version = $versionText -replace '[^0-9A-Za-z._-]', '-'
+        "value=$version" >> $env:GITHUB_OUTPUT
+
+    - name: Cache vcpkg binaries (Windows)
+      if: runner.os == 'Windows'
+      uses: actions/cache@v5
+      with:
+        path: ~\AppData\Local\vcpkg\archives
+        key: vcpkg-${{ runner.os }}-${{ runner.arch }}-${{ steps.vcpkg-version.outputs.value }}-${{ hashFiles('.github/workflows/cmake-cross-platform.yml') }}
+
     # Windows：沿用 classic 模式 vcpkg 安装依赖。
     - name: Install dependencies (Windows)
       if: runner.os == 'Windows'
@@ -37,7 +56,7 @@ jobs:
       run: |
         $packages = @(
           "sqlite3:x64-windows"
-          "boost-asio:x64-windows"
+          "boost-asio[core]:x64-windows"
           "boost-beast:x64-windows"
         )
         & "$env:VCPKG_INSTALLATION_ROOT\vcpkg.exe" install @packages
@@ -123,3 +142,46 @@ jobs:
         name: ${{ matrix.name }}
         path: build/${{ matrix.package }}
         if-no-files-found: error
+
+  publish:
+    name: Publish GitHub Release
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+    - name: Download release packages
+      uses: actions/download-artifact@v4
+      with:
+        path: dist
+        merge-multiple: true
+
+    - name: Verify release packages
+      shell: bash
+      run: |
+        required=(
+          "keyrecord-windows-x64.zip"
+          "keyrecord-linux-x64.tar.gz"
+          "keyrecord-darwin-arm64.tar.gz"
+        )
+
+        for file in "${required[@]}"; do
+          if [ ! -s "dist/$file" ]; then
+            echo "Release package is missing or empty: dist/$file"
+            exit 1
+          fi
+        done
+
+    - name: Publish GitHub Release
+      env:
+        GH_TOKEN: ${{ github.token }}
+        GH_REPO: ${{ github.repository }}
+      run: |
+        gh release create "$GITHUB_REF_NAME" \
+          dist/keyrecord-windows-x64.zip \
+          dist/keyrecord-linux-x64.tar.gz \
+          dist/keyrecord-darwin-arm64.tar.gz \
+          --verify-tag \
+          --generate-notes
