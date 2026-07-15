@@ -5,153 +5,172 @@ const App = {
   availableRange: { first: null, last: null },
   topKeys: [],
   pendingLoads: 0,
+  refreshVersion: 0,
+  currentTotal: 0,
 
   async init() {
-    console.log('🚀 KeyRecord 可视化应用启动中...');
-    this.initFilterControls();
+    this.initElements();
+    this.initNavigation();
     this.initTheme();
     CalendarHeatmap.init();
     KeyboardHeatmap.init();
+
     if (window.Analysis) {
       Analysis.init();
       Analysis.configureLive(
         () => ({ ...this.currentRange }),
         async () => {
-          if (window.ApiCache) ApiCache.invalidateApi();
+          ApiCache.invalidateApi();
+          await CalendarHeatmap.load();
           await this.refreshRangeData({ forceAnalysis: true });
         }
       );
     }
 
-    CalendarHeatmap.setDateSelectHandler((date) => {
-      this.setDateRange(date, date);
-      this.refreshRangeData();
-    });
-    CalendarHeatmap.setRangeSelectHandler((range) => {
-      this.setDateRange(range.start, range.end);
-      this.refreshRangeData();
-    });
+    CalendarHeatmap.setDateSelectHandler((date) => this.commitRange(date, date, 'day'));
+    CalendarHeatmap.setRangeSelectHandler((range) => this.commitRange(range.start, range.end, 'brush'));
 
-    const info = await this.withLoading(() => this.loadDatabaseInfo());
+    const [info] = await this.withLoading(() => Promise.all([
+      this.loadDatabaseInfo(),
+      CalendarHeatmap.load()
+    ]));
     this.configureDateRange(info);
-    this.setDateRange(this.defaultRange.start, this.defaultRange.end);
 
-    await Promise.all([
-      this.refreshRangeData(),
-      this.withLoading(() => CalendarHeatmap.load())
-    ]);
-
-    CalendarHeatmap.setBrushRange(this.currentRange.start, this.currentRange.end);
-
-    console.log('✓ 应用初始化完成');
-  },
-
-  initFilterControls() {
-    this.elements.loadingBar = document.getElementById('loading-bar');
-    this.elements.filterStart = document.getElementById('filter-start');
-    this.elements.filterEnd = document.getElementById('filter-end');
-    this.elements.filterApply = document.getElementById('filter-apply');
-    this.elements.filterToday = document.getElementById('filter-today');
-    this.elements.filterLast7 = document.getElementById('filter-last7');
-    this.elements.filterLast30 = document.getElementById('filter-last30');
-    this.elements.filterMonth = document.getElementById('filter-month');
-    this.elements.filterAll = document.getElementById('filter-all');
-    this.elements.filterStatus = document.getElementById('filter-status');
-    this.elements.topKeysBody = document.getElementById('top-keys-body');
-    this.elements.topKeysStatus = document.getElementById('top-keys-status');
-    this.elements.topKeysRange = document.getElementById('top-keys-range');
-    this.elements.themeToggle = document.getElementById('theme-toggle');
-    this.elements.printPage = document.getElementById('print-page');
-    this.elements.exportCsv = document.getElementById('export-csv');
-    this.elements.exportJson = document.getElementById('export-json');
-    this.elements.exportPng = document.getElementById('export-png');
-
-    this.bindClick(this.elements.filterApply, () => this.applyDateFilter());
-    this.bindClick(this.elements.filterToday, () => this.applyPresetRange('today'));
-    this.bindClick(this.elements.filterLast7, () => this.applyPresetRange('last7'));
-    this.bindClick(this.elements.filterLast30, () => this.applyPresetRange('last30'));
-    this.bindClick(this.elements.filterMonth, () => this.applyPresetRange('month'));
-    this.bindClick(this.elements.filterAll, () => this.applyPresetRange('all'));
-    this.bindClick(this.elements.themeToggle, () => this.toggleTheme());
-    this.bindClick(this.elements.printPage, () => window.print());
-    this.bindClick(this.elements.exportCsv, () => this.exportData('csv'));
-    this.bindClick(this.elements.exportJson, () => this.exportData('json'));
-    this.bindClick(this.elements.exportPng, () => KeyboardHeatmap.exportPng(this.currentRange));
-  },
-
-  bindClick(element, handler) {
-    if (element) {
-      element.addEventListener('click', handler);
+    if (!this.availableRange.first || !this.availableRange.last) {
+      this.setEmptyState();
+      return;
     }
+
+    this.setDateRange(this.defaultRange.start, this.defaultRange.end);
+    await this.refreshRangeData();
+  },
+
+  initElements() {
+    const ids = [
+      'loading-bar', 'filter-start', 'filter-end', 'filter-apply', 'filter-today',
+      'filter-last7', 'filter-last30', 'filter-month', 'filter-all', 'filter-status',
+      'top-keys-body-left', 'top-keys-body-right', 'top-keys-status', 'top-keys-range',
+      'theme-toggle', 'print-page', 'export-csv', 'export-json', 'export-png', 'export-top-csv'
+    ];
+    ids.forEach((id) => { this.elements[id] = document.getElementById(id); });
+
+    this.bindClick('filter-apply', () => this.applyDateFilter());
+    this.bindClick('filter-today', () => this.applyPresetRange('today'));
+    this.bindClick('filter-last7', () => this.applyPresetRange('last7'));
+    this.bindClick('filter-last30', () => this.applyPresetRange('last30'));
+    this.bindClick('filter-month', () => this.applyPresetRange('month'));
+    this.bindClick('filter-all', () => this.applyPresetRange('all'));
+    this.bindClick('theme-toggle', () => this.toggleTheme());
+    this.bindClick('print-page', () => window.print());
+    this.bindClick('export-csv', () => this.exportData('csv'));
+    this.bindClick('export-json', () => this.exportData('json'));
+    this.bindClick('export-png', () => KeyboardHeatmap.exportPng(this.currentRange));
+    this.bindClick('export-top-csv', () => this.exportTopKeysCsv());
+
+    ['filter-start', 'filter-end'].forEach((id) => {
+      const element = this.elements[id];
+      if (element) element.addEventListener('keydown', (event) => {
+        if (event.key === 'Enter') this.applyDateFilter();
+      });
+    });
+  },
+
+  bindClick(id, handler) {
+    const element = this.elements[id];
+    if (element) element.addEventListener('click', handler);
+  },
+
+  initNavigation() {
+    const links = Array.from(document.querySelectorAll('.nav-item[data-section]'));
+    const ratios = new Map();
+    let navigationTarget = null;
+    let navigationReleaseTimer = null;
+    const setActiveSection = (sectionId) => {
+      links.forEach((link) => link.classList.toggle('is-active', link.dataset.section === sectionId));
+    };
+    const updateActiveSection = () => {
+      if (navigationTarget) {
+        setActiveSection(navigationTarget);
+        window.clearTimeout(navigationReleaseTimer);
+        navigationReleaseTimer = window.setTimeout(() => {
+          navigationTarget = null;
+          updateActiveSection();
+        }, 180);
+        return;
+      }
+
+      const documentElement = document.documentElement;
+      const atPageBottom = window.scrollY + window.innerHeight >= documentElement.scrollHeight - 2;
+      if (atPageBottom && links.length > 0) {
+        setActiveSection(links[links.length - 1].dataset.section);
+        return;
+      }
+
+      const active = Array.from(ratios.entries()).sort((a, b) => b[1] - a[1])[0];
+      if (active && active[1] > 0) setActiveSection(active[0]);
+    };
+
+    links.forEach((link) => link.addEventListener('click', (event) => {
+      const section = document.getElementById(link.dataset.section);
+      if (!section) return;
+      event.preventDefault();
+      navigationTarget = link.dataset.section;
+      setActiveSection(link.dataset.section);
+      updateActiveSection();
+      section.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }));
+
+    if (!window.IntersectionObserver) return;
+    const observer = new IntersectionObserver((entries) => {
+      entries.forEach((entry) => ratios.set(entry.target.id, entry.isIntersecting ? entry.intersectionRatio : 0));
+      updateActiveSection();
+    }, { rootMargin: '-8% 0px -54% 0px', threshold: [0, 0.15, 0.35, 0.6, 0.9] });
+    links.forEach((link) => {
+      const section = document.getElementById(link.dataset.section);
+      if (section) observer.observe(section);
+    });
+    window.addEventListener('scroll', updateActiveSection, { passive: true });
   },
 
   async withLoading(work) {
     this.setLoading(true);
-    try {
-      return await work();
-    } finally {
-      this.setLoading(false);
-    }
+    try { return await work(); } finally { this.setLoading(false); }
   },
 
   setLoading(isLoading) {
-    this.pendingLoads += isLoading ? 1 : -1;
-    if (this.pendingLoads < 0) {
-      this.pendingLoads = 0;
-    }
-    if (this.elements.loadingBar) {
-      this.elements.loadingBar.classList.toggle('is-active', this.pendingLoads > 0);
-    }
+    this.pendingLoads = Math.max(0, this.pendingLoads + (isLoading ? 1 : -1));
+    if (this.elements['loading-bar']) this.elements['loading-bar'].classList.toggle('is-active', this.pendingLoads > 0);
   },
 
   initTheme() {
-    const storedTheme = this.readStoredTheme();
-    const preferredTheme = storedTheme || 'light';
-    this.setTheme(preferredTheme);
-  },
-
-  readStoredTheme() {
-    try {
-      return localStorage.getItem('keyrecord-theme');
-    } catch (error) {
-      console.warn('读取主题配置失败:', error);
-      return null;
-    }
+    let storedTheme = null;
+    try { storedTheme = localStorage.getItem('keyrecord-theme'); } catch (error) { console.warn('读取主题配置失败:', error); }
+    this.setTheme(storedTheme === 'dark' ? 'dark' : 'light');
   },
 
   setTheme(theme) {
-    const safeTheme = theme === 'dark' ? 'dark' : 'light';
-    document.body.dataset.theme = safeTheme;
-    if (this.elements.themeToggle) {
-      this.elements.themeToggle.textContent = safeTheme === 'dark' ? '☀' : '◐';
-      this.elements.themeToggle.setAttribute('aria-label', safeTheme === 'dark' ? '切换浅色主题' : '切换深色主题');
-      this.elements.themeToggle.title = safeTheme === 'dark' ? '切换浅色主题' : '切换深色主题';
+    document.body.dataset.theme = theme === 'dark' ? 'dark' : 'light';
+    const button = this.elements['theme-toggle'];
+    if (button) {
+      const label = theme === 'dark' ? '切换浅色主题' : '切换深色主题';
+      button.setAttribute('aria-label', label);
+      button.title = label;
     }
   },
 
   toggleTheme() {
-    const nextTheme = document.body.dataset.theme === 'dark' ? 'light' : 'dark';
-    this.setTheme(nextTheme);
-    try {
-      localStorage.setItem('keyrecord-theme', nextTheme);
-    } catch (error) {
-      console.warn('保存主题配置失败:', error);
-    }
+    const theme = document.body.dataset.theme === 'dark' ? 'light' : 'dark';
+    this.setTheme(theme);
+    try { localStorage.setItem('keyrecord-theme', theme); } catch (error) { console.warn('保存主题配置失败:', error); }
+    CalendarHeatmap.renderCalendar();
   },
 
   async loadDatabaseInfo() {
     try {
-      const info = await ApiCache.fetchJson('/api/info');
-      document.getElementById('total-keys').textContent = info.total_keys.toLocaleString();
-      document.getElementById('data-range').textContent = info.first_date && info.last_date
-        ? info.first_date + ' ~ ' + info.last_date
-        : '暂无数据';
-      console.log('✓ 数据库信息加载完成');
-      return info;
+      return await ApiCache.fetchJson('/api/info');
     } catch (error) {
       console.error('加载数据库信息失败:', error);
-      document.getElementById('total-keys').textContent = '错误';
-      document.getElementById('data-range').textContent = '错误';
+      this.setFilterStatus('数据库信息加载失败: ' + error.message, true);
       return null;
     }
   },
@@ -161,202 +180,198 @@ const App = {
       first: info && info.first_date ? info.first_date : null,
       last: info && info.last_date ? info.last_date : null
     };
-    this.defaultRange = this.getDefaultDateRange(info);
-
-    if (this.elements.filterStart && this.elements.filterEnd && this.availableRange.first && this.availableRange.last) {
-      this.elements.filterStart.min = this.availableRange.first;
-      this.elements.filterStart.max = this.availableRange.last;
-      this.elements.filterEnd.min = this.availableRange.first;
-      this.elements.filterEnd.max = this.availableRange.last;
-    }
+    this.defaultRange = this.getDefaultDateRange();
+    if (!this.availableRange.first || !this.availableRange.last) return;
+    ['filter-start', 'filter-end'].forEach((id) => {
+      const input = this.elements[id];
+      if (!input) return;
+      input.min = this.availableRange.first;
+      input.max = this.availableRange.last;
+    });
   },
 
-  getDefaultDateRange(info) {
-    const fallbackEnd = this.todayUtcDate();
-    const endDate = info && info.last_date ? this.parseDateValue(info.last_date) : fallbackEnd;
-    const firstDate = info && info.first_date ? this.parseDateValue(info.first_date) : null;
+  getDefaultDateRange() {
+    const end = DateUtils.parse(this.availableRange.last);
+    const first = DateUtils.parse(this.availableRange.first);
+    if (!end || !first) return { start: null, end: null };
+    const candidate = DateUtils.addDays(end, -29);
+    return { start: DateUtils.format(first > candidate ? first : candidate), end: DateUtils.format(end) };
+  },
 
-    if (!endDate) {
-      return { start: null, end: null };
-    }
-
-    // 默认最近 7 天包含结束日当天，因此从 end 向前推 6 天。
-    const startCandidate = this.addDays(endDate, -6);
-    const startDate = firstDate && firstDate > startCandidate ? firstDate : startCandidate;
-
-    return {
-      start: this.formatDateValue(startDate),
-      end: this.formatDateValue(endDate)
-    };
+  setEmptyState() {
+    document.querySelectorAll('.filter-panel button, .filter-panel input').forEach((element) => { element.disabled = true; });
+    this.setFilterStatus('数据库中暂无按键记录', false);
+    CalendarHeatmap.setTrendRange(null, null);
+    CalendarHeatmap.renderCalendar();
+    this.renderOverview([]);
+    KeyboardHeatmap.setStatus('暂无数据');
+    this.renderTopKeys([]);
   },
 
   async applyDateFilter() {
-    const startDate = this.elements.filterStart ? this.elements.filterStart.value : null;
-    const endDate = this.elements.filterEnd ? this.elements.filterEnd.value : null;
-
-    if (!this.validateDateRange(startDate, endDate)) {
-      return;
-    }
-
-    this.setDateRange(startDate, endDate);
-    await this.refreshRangeData();
+    const start = this.elements['filter-start'] ? this.elements['filter-start'].value : '';
+    const end = this.elements['filter-end'] ? this.elements['filter-end'].value : '';
+    await this.commitRange(start, end, 'manual');
   },
 
   async applyPresetRange(preset) {
     const range = this.getPresetRange(preset);
-    if (!range) {
-      this.setFilterStatus('当前没有可用日期范围', true);
-      return;
-    }
-
-    this.setDateRange(range.start, range.end);
-    await this.refreshRangeData();
+    if (!range) return;
+    await this.commitRange(range.start, range.end, preset);
   },
 
   getPresetRange(preset) {
-    const today = this.todayUtcDate();
-    const lastDataDate = this.availableRange.last ? this.parseDateValue(this.availableRange.last) : null;
-    const firstDataDate = this.availableRange.first ? this.parseDateValue(this.availableRange.first) : null;
-    const referenceDate = lastDataDate || today;
-
-    if (preset === 'today') {
-      const value = this.formatDateValue(today);
-      return { start: value, end: value };
+    const first = DateUtils.parse(this.availableRange.first);
+    const last = DateUtils.parse(this.availableRange.last);
+    if (!first || !last) {
+      this.setFilterStatus('当前没有可用日期范围', true);
+      return null;
     }
-
-    if (preset === 'all') {
-      if (!firstDataDate || !lastDataDate) {
+    if (preset === 'all') return { start: DateUtils.format(first), end: DateUtils.format(last) };
+    if (preset === 'today') {
+      const today = new Date();
+      const value = DateUtils.format(new Date(Date.UTC(today.getFullYear(), today.getMonth(), today.getDate())));
+      if (value < this.availableRange.first || value > this.availableRange.last) {
+        this.setFilterStatus('今天不在数据库可用范围内', true);
         return null;
       }
-      return {
-        start: this.formatDateValue(firstDataDate),
-        end: this.formatDateValue(lastDataDate)
-      };
+      return { start: value, end: value };
     }
-
     if (preset === 'month') {
-      const start = new Date(Date.UTC(today.getUTCFullYear(), today.getUTCMonth(), 1));
-      const end = new Date(Date.UTC(today.getUTCFullYear(), today.getUTCMonth() + 1, 0));
-      return {
-        start: this.formatDateValue(start),
-        end: this.formatDateValue(end)
-      };
+      const startOfMonth = new Date(Date.UTC(last.getUTCFullYear(), last.getUTCMonth(), 1));
+      return { start: DateUtils.format(first > startOfMonth ? first : startOfMonth), end: DateUtils.format(last) };
     }
-
     const days = preset === 'last30' ? 30 : 7;
-    const startCandidate = this.addDays(referenceDate, -(days - 1));
-    const startDate = firstDataDate && firstDataDate > startCandidate ? firstDataDate : startCandidate;
-
-    return {
-      start: this.formatDateValue(startDate),
-      end: this.formatDateValue(referenceDate)
-    };
+    const candidate = DateUtils.addDays(last, -(days - 1));
+    return { start: DateUtils.format(first > candidate ? first : candidate), end: DateUtils.format(last) };
   },
 
-  async updateKeyboardHeatmap(startDate, endDate) {
-    if (!this.validateDateRange(startDate, endDate)) {
-      return;
-    }
-
-    this.setDateRange(startDate, endDate);
+  async commitRange(start, end, source) {
+    if (!this.validateDateRange(start, end)) return;
+    this.setDateRange(start, end);
+    this.updatePresetState(source);
     await this.refreshRangeData();
+  },
+
+  setDateRange(start, end) {
+    this.currentRange = { start, end };
+    if (this.elements['filter-start']) this.elements['filter-start'].value = start || '';
+    if (this.elements['filter-end']) this.elements['filter-end'].value = end || '';
+    CalendarHeatmap.setTrendRange(start, end);
+  },
+
+  updatePresetState(source) {
+    ['today', 'last7', 'last30', 'month', 'all'].forEach((preset) => {
+      const button = this.elements['filter-' + preset];
+      if (button) button.classList.toggle('is-selected', source === preset);
+    });
+  },
+
+  validateDateRange(start, end) {
+    const startDate = DateUtils.parse(start);
+    const endDate = DateUtils.parse(end);
+    if (!startDate || !endDate) {
+      this.setFilterStatus('请选择合法且完整的日期范围', true);
+      return false;
+    }
+    if (startDate > endDate) {
+      this.setFilterStatus('开始日期不能晚于结束日期', true);
+      return false;
+    }
+    if (this.availableRange.first && (start < this.availableRange.first || end > this.availableRange.last)) {
+      this.setFilterStatus('日期必须位于 ' + this.availableRange.first + ' 至 ' + this.availableRange.last + ' 之间', true);
+      return false;
+    }
+    return true;
   },
 
   async refreshRangeData(options) {
     const { start, end } = this.currentRange;
+    if (!this.validateDateRange(start, end)) return;
+    const version = ++this.refreshVersion;
+    const rows = CalendarHeatmap.getRangeRows(start, end);
+    this.renderOverview(rows);
+    CalendarHeatmap.setTrendRange(start, end);
+    KeyboardHeatmap.setRangeTotal(this.currentTotal);
+    if (window.Analysis) Analysis.renderActivityOverview(rows, start, end);
+    this.setFilterStatus('正在刷新当前范围…');
 
-    if (!this.validateDateRange(start, end)) {
-      return;
-    }
-
-    this.setFilterStatus('加载中...');
-    await this.withLoading(async () => {
-      await Promise.all([
-        KeyboardHeatmap.loadKeyboardHeatmap(start, end),
-        this.loadTopKeys(start, end)
-      ]);
-    });
+    await this.withLoading(() => Promise.all([
+      KeyboardHeatmap.loadKeyboardHeatmap(start, end),
+      this.loadTopKeys(start, end, version)
+    ]));
+    if (version !== this.refreshVersion) return;
     if (window.Analysis && Analysis.isRangeActive()) {
       await Analysis.update(start, end, { force: options && options.forceAnalysis });
     }
-    this.setFilterStatus('当前范围: ' + this.formatRangeLabel(start, end));
+    if (version !== this.refreshVersion) return;
+    this.setFilterStatus('当前范围：' + this.formatRangeLabel(start, end));
   },
 
-  async loadTopKeys(startDate, endDate) {
-    this.setTopKeysStatus('加载中...');
-    this.setTopKeysRangeLabel(startDate, endDate);
+  renderOverview(rows) {
+    const total = rows.reduce((sum, row) => sum + row.count, 0);
+    const activeDays = rows.filter((row) => row.count > 0).length;
+    const average = activeDays > 0 ? Math.round(total / activeDays) : 0;
+    const days = DateUtils.rangeDays(this.currentRange.start, this.currentRange.end);
+    this.currentTotal = total;
+    this.setText('metric-total', DateUtils.formatNumber(total));
+    this.setText('metric-active-days', DateUtils.formatNumber(activeDays));
+    this.setText('metric-average', DateUtils.formatNumber(average));
+    this.setText('metric-period', days + ' 天');
+    this.setText('metric-period-range', this.currentRange.start && this.currentRange.end ? this.currentRange.start + ' → ' + this.currentRange.end : '暂无可用范围');
+    this.setText('metric-period-badge', days > 0 ? '最近 ' + days + ' 天' : '等待数据');
+    this.setText('overview-range-label', this.currentRange.start ? '当前统计范围：' + this.formatRangeLabel(this.currentRange.start, this.currentRange.end) : '本地键盘数据尚未建立统计范围');
+  },
 
+  async loadTopKeys(start, end, version) {
+    this.setText('top-keys-status', '加载中…');
+    this.setText('top-keys-range', this.formatRangeLabel(start, end));
     try {
-      const keys = await ApiCache.fetchJson(this.buildTopKeysUrl(startDate, endDate));
-      const keyRows = Array.isArray(keys) ? keys : [];
-      this.topKeys = keyRows;
-      this.renderTopKeys(keyRows);
-      this.setTopKeysStatus(keyRows.length > 0 ? '已加载' : '暂无数据');
-      console.log('✓ Top 20 按键排行加载完成: ' + keyRows.length + ' 个按键');
+      const rows = await ApiCache.fetchJson('/api/keys?limit=20&start=' + encodeURIComponent(start) + '&end=' + encodeURIComponent(end));
+      if (version !== this.refreshVersion) return;
+      this.topKeys = Array.isArray(rows) ? rows : [];
+      this.renderTopKeys(this.topKeys);
+      this.setText('top-keys-status', this.topKeys.length ? '已加载 ' + this.topKeys.length + ' 项' : '当前范围暂无数据');
     } catch (error) {
+      if (version !== this.refreshVersion) return;
       console.error('加载 Top 20 按键排行失败:', error);
       this.topKeys = [];
       this.renderTopKeys([]);
-      this.setTopKeysStatus('加载失败: ' + error.message);
+      this.setText('top-keys-status', '加载失败: ' + error.message);
     }
-  },
-
-  buildTopKeysUrl(startDate, endDate) {
-    const params = new URLSearchParams();
-    params.set('limit', '20');
-
-    if (startDate && endDate) {
-      params.set('start', startDate);
-      params.set('end', endDate);
-    }
-
-    return '/api/keys?' + params.toString();
   },
 
   renderTopKeys(keys) {
-    if (!this.elements.topKeysBody) return;
-
-    this.elements.topKeysBody.innerHTML = '';
-
-    if (keys.length === 0) {
-      const row = document.createElement('tr');
-      const cell = document.createElement('td');
-      cell.className = 'empty-cell';
-      cell.colSpan = 5;
-      cell.textContent = '当前范围暂无按键数据';
-      row.appendChild(cell);
-      this.elements.topKeysBody.appendChild(row);
+    const left = this.elements['top-keys-body-left'];
+    const right = this.elements['top-keys-body-right'];
+    if (!left || !right) return;
+    left.innerHTML = '';
+    right.innerHTML = '';
+    const grid = left.closest('.ranking-grid');
+    if (grid) grid.classList.toggle('is-single', keys.length <= 10);
+    if (!keys.length) {
+      left.innerHTML = '<tr><td colspan="5" class="empty-cell">当前范围暂无按键数据</td></tr>';
       return;
     }
+    keys.forEach((item, index) => this.appendTopKeyRow(index < 10 ? left : right, item, index));
+  },
 
-    const total = keys.reduce((sum, item) => sum + (Number(item.count) || 0), 0);
-
-    keys.forEach((item, index) => {
-      const count = Number(item.count) || 0;
-      const ratio = total > 0 ? count / total : 0;
-      const row = document.createElement('tr');
-
-      this.appendTableCell(row, String(index + 1), 'rank-cell');
-      this.appendTableCell(row, item.key_name || '(未知)', 'key-name-cell');
-      this.appendTableCell(row, String(item.vk_code), 'code-cell');
-      this.appendTableCell(row, count.toLocaleString(), 'count-cell');
-
-      const ratioCell = document.createElement('td');
-      ratioCell.className = 'ratio-cell';
-
-      const ratioBar = document.createElement('span');
-      ratioBar.className = 'ratio-bar';
-      ratioBar.style.width = Math.max(ratio * 100, 2) + '%';
-
-      const ratioText = document.createElement('span');
-      ratioText.className = 'ratio-text';
-      ratioText.textContent = (ratio * 100).toFixed(ratio >= 0.1 ? 0 : 1) + '%';
-
-      ratioCell.appendChild(ratioBar);
-      ratioCell.appendChild(ratioText);
-      row.appendChild(ratioCell);
-      this.elements.topKeysBody.appendChild(row);
-    });
+  appendTopKeyRow(body, item, index) {
+    const count = Math.max(0, Number(item.count) || 0);
+    const ratio = this.currentTotal > 0 ? count / this.currentTotal : 0;
+    const row = document.createElement('tr');
+    this.appendTableCell(row, String(index + 1), 'rank-cell');
+    this.appendTableCell(row, item.key_name || '(未知)', 'key-name-cell');
+    this.appendTableCell(row, String(item.vk_code), 'code-cell');
+    this.appendTableCell(row, DateUtils.formatNumber(count), 'count-cell');
+    const ratioCell = document.createElement('td');
+    ratioCell.className = 'ratio-cell';
+    const wrapper = document.createElement('div');
+    wrapper.className = 'ratio-wrap';
+    wrapper.innerHTML = '<span class="ratio-track"><span class="ratio-bar" style="width:' + Math.min(100, ratio * 100) + '%"></span></span><span class="ratio-text">' + (ratio * 100).toFixed(2) + '%</span>';
+    ratioCell.appendChild(wrapper);
+    row.appendChild(ratioCell);
+    body.appendChild(row);
   },
 
   appendTableCell(row, text, className) {
@@ -366,57 +381,36 @@ const App = {
     row.appendChild(cell);
   },
 
-  setDateRange(startDate, endDate) {
-    this.currentRange = { start: startDate, end: endDate };
-
-    if (this.elements.filterStart) {
-      this.elements.filterStart.value = startDate || '';
-    }
-
-    if (this.elements.filterEnd) {
-      this.elements.filterEnd.value = endDate || '';
-    }
-
-    CalendarHeatmap.setBrushRange(startDate, endDate);
+  formatRangeLabel(start, end) {
+    return start && end ? (start === end ? start : start + ' 至 ' + end) : '全部';
   },
 
-  validateDateRange(startDate, endDate) {
-    const start = this.parseDateValue(startDate);
-    const end = this.parseDateValue(endDate);
-
-    if (!start || !end) {
-      this.setFilterStatus('请选择完整日期范围', true);
-      return false;
-    }
-
-    if (start > end) {
-      this.setFilterStatus('开始日期不能晚于结束日期', true);
-      return false;
-    }
-
-    return true;
-  },
-
-  formatRangeLabel(startDate, endDate) {
-    if (startDate && endDate) {
-      return startDate === endDate ? startDate : startDate + ' ~ ' + endDate;
-    }
-
-    return '全部';
+  exportTopKeysCsv() {
+    const rows = [['rank', 'key_name', 'vk_code', 'count', 'range_ratio']];
+    this.topKeys.forEach((item, index) => {
+      const count = Math.max(0, Number(item.count) || 0);
+      rows.push([index + 1, item.key_name || '', item.vk_code, count, this.currentTotal > 0 ? (count / this.currentTotal).toFixed(6) : '0']);
+    });
+    this.downloadBlob('\ufeff' + this.csvRows(rows), 'keyrecord_top20_' + this.exportRangeToken() + '.csv', 'text/csv;charset=utf-8');
   },
 
   exportData(format) {
-    const payload = this.buildExportPayload();
-    const filenameBase = 'keyrecord_' + this.exportRangeToken();
-
-    if (format === 'json') {
-      const json = JSON.stringify(payload, null, 2);
-      this.downloadBlob(json, filenameBase + '.json', 'application/json;charset=utf-8');
-      return;
+    try {
+      const payload = this.buildExportPayload();
+      const base = 'keyrecord_' + this.exportRangeToken();
+      if (format === 'json') {
+        this.downloadBlob(JSON.stringify(payload, null, 2), base + '.json', 'application/json;charset=utf-8');
+        return;
+      }
+      const rows = [['section', 'range_start', 'range_end', 'date', 'key_name', 'vk_code', 'count', 'x', 'y']];
+      payload.top_keys.forEach((item) => rows.push(['top_keys', payload.range.start, payload.range.end, '', item.key_name || '', item.vk_code, item.count, '', '']));
+      payload.heatmap.forEach((item) => rows.push(['heatmap', payload.range.start, payload.range.end, '', item.key_name || '', item.vk_code, item.count, item.x, item.y]));
+      payload.daily_stats.forEach((item) => rows.push(['daily_stats', payload.range.start, payload.range.end, item.date, '', '', item.count, '', '']));
+      this.downloadBlob('\ufeff' + this.csvRows(rows), base + '.csv', 'text/csv;charset=utf-8');
+    } catch (error) {
+      console.error('导出范围数据失败:', error);
+      this.setFilterStatus('导出失败: ' + error.message, true);
     }
-
-    const csv = this.buildCsv(payload);
-    this.downloadBlob(csv, filenameBase + '.csv', 'text/csv;charset=utf-8');
   },
 
   buildExportPayload() {
@@ -425,39 +419,18 @@ const App = {
       range: { ...this.currentRange },
       top_keys: this.topKeys,
       heatmap: KeyboardHeatmap.data,
-      daily_stats: CalendarHeatmap.data
+      daily_stats: CalendarHeatmap.getRangeRows(this.currentRange.start, this.currentRange.end)
     };
   },
 
-  buildCsv(payload) {
-    const rows = [
-      ['section', 'range_start', 'range_end', 'date', 'key_name', 'vk_code', 'count', 'x', 'y']
-    ];
-
-    payload.top_keys.forEach((item) => {
-      rows.push(['top_keys', payload.range.start, payload.range.end, '', item.key_name || '', item.vk_code, item.count, '', '']);
-    });
-
-    payload.heatmap.forEach((item) => {
-      rows.push(['heatmap', payload.range.start, payload.range.end, '', item.key_name || '', item.vk_code, item.count, item.x, item.y]);
-    });
-
-    payload.daily_stats.forEach((item) => {
-      rows.push(['daily_stats', '', '', item.date, '', '', item.count, '', '']);
-    });
-
-    return rows.map(row => row.map(value => this.escapeCsvValue(value)).join(',')).join('\r\n') + '\r\n';
+  csvRows(rows) {
+    return rows.map((row) => row.map((value) => this.escapeCsvValue(value)).join(',')).join('\r\n') + '\r\n';
   },
 
   escapeCsvValue(value) {
-    if (value === null || value === undefined) {
-      return '';
-    }
+    if (value === null || value === undefined) return '';
     const text = String(value);
-    if (/[",\r\n]/.test(text)) {
-      return '"' + text.replace(/"/g, '""') + '"';
-    }
-    return text;
+    return /[",\r\n]/.test(text) ? '"' + text.replace(/"/g, '""') + '"' : text;
   },
 
   downloadBlob(content, filename, contentType) {
@@ -474,68 +447,21 @@ const App = {
 
   exportRangeToken() {
     const { start, end } = this.currentRange;
-    if (start && end) {
-      return start === end ? start : start + '_' + end;
-    }
-    return 'all';
+    return start && end ? (start === end ? start : start + '_' + end) : 'all';
   },
 
-  setFilterStatus(message, isError = false) {
-    if (!this.elements.filterStatus) return;
-
-    this.elements.filterStatus.textContent = message;
-    this.elements.filterStatus.classList.toggle('is-error', isError);
+  setFilterStatus(message, isError) {
+    const element = this.elements['filter-status'];
+    if (!element) return;
+    element.textContent = message;
+    element.classList.toggle('is-error', Boolean(isError));
   },
 
-  setTopKeysStatus(message) {
-    if (this.elements.topKeysStatus) {
-      this.elements.topKeysStatus.textContent = message;
-    }
-  },
-
-  setTopKeysRangeLabel(startDate, endDate) {
-    if (this.elements.topKeysRange) {
-      this.elements.topKeysRange.textContent = this.formatRangeLabel(startDate, endDate);
-    }
-  },
-
-  parseDateValue(value) {
-    if (!value || !/^\d{4}-\d{2}-\d{2}$/.test(value)) {
-      return null;
-    }
-
-    const [year, month, day] = value.split('-').map(Number);
-    const date = new Date(Date.UTC(year, month - 1, day));
-
-    if (
-      date.getUTCFullYear() !== year ||
-      date.getUTCMonth() !== month - 1 ||
-      date.getUTCDate() !== day
-    ) {
-      return null;
-    }
-
-    return date;
-  },
-
-  formatDateValue(date) {
-    return date.toISOString().slice(0, 10);
-  },
-
-  addDays(date, days) {
-    const next = new Date(date.getTime());
-    next.setUTCDate(next.getUTCDate() + days);
-    return next;
-  },
-
-  todayUtcDate() {
-    const now = new Date();
-    return new Date(Date.UTC(now.getFullYear(), now.getMonth(), now.getDate()));
+  setText(id, value) {
+    const element = document.getElementById(id);
+    if (element) element.textContent = value;
   }
 };
 
-document.addEventListener('DOMContentLoaded', () => {
-  App.init();
-});
-
+document.addEventListener('DOMContentLoaded', () => App.init());
 window.App = App;

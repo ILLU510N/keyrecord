@@ -1,5 +1,6 @@
 const ApiCache = {
   memory: new Map(),
+  pending: new Map(),
   defaultTtlMs: 30000,
   storagePrefix: 'keyrecord-api-cache:',
 
@@ -11,14 +12,23 @@ const ApiCache = {
       return cached;
     }
 
-    const response = await fetch(url);
-    if (!response.ok) {
-      throw new Error('请求失败: ' + response.status);
+    if (this.pending.has(url)) {
+      return this.pending.get(url);
     }
 
-    const data = await response.json();
-    this.write(url, data, ttlMs, useStorage);
-    return data;
+    const request = fetch(url)
+      .then((response) => {
+        if (!response.ok) throw new Error('请求失败: ' + response.status);
+        return response.json();
+      })
+      .then((data) => {
+        this.write(url, data, ttlMs, useStorage);
+        return data;
+      })
+      .finally(() => this.pending.delete(url));
+
+    this.pending.set(url, request);
+    return request;
   },
 
   read(url, useStorage) {
@@ -81,6 +91,23 @@ const ApiCache = {
       keys.forEach((key) => localStorage.removeItem(key));
     } catch (error) {
       console.warn('清理 API 缓存失败:', error);
+    }
+  },
+
+  invalidateMatching(prefix) {
+    Array.from(this.memory.keys()).forEach((key) => {
+      if (key.indexOf(prefix) === 0) this.memory.delete(key);
+    });
+
+    try {
+      const keys = [];
+      for (let i = 0; i < localStorage.length; i += 1) {
+        const key = localStorage.key(i);
+        if (key && key.indexOf(this.storagePrefix + prefix) === 0) keys.push(key);
+      }
+      keys.forEach((key) => localStorage.removeItem(key));
+    } catch (error) {
+      console.warn('清理指定 API 缓存失败:', error);
     }
   }
 };

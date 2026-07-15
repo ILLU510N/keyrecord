@@ -57,7 +57,13 @@ int main() {
         ok = expectContains(indexText, "export-csv", "index.html must provide the CSV export control") && ok;
         ok = expectContains(indexText, "export-json", "index.html must provide the JSON export control") && ok;
         ok = expectContains(indexText, "export-png", "index.html must provide the PNG export control") && ok;
-        ok = expectContains(indexText, "keyboard-zoom-in", "index.html must provide keyboard zoom controls") && ok;
+        ok = expectNotContains(indexText, "keyboard-zoom-in", "index.html must not provide keyboard zoom controls") && ok;
+        ok = expectContains(
+                 indexText,
+                 "https://github.com/ILLU510N/keyrecord/issues",
+                 "index.html must link help and feedback to GitHub Issues") &&
+             ok;
+        ok = expectContains(indexText, "target=\"_blank\"", "GitHub Issues must open in a new tab") && ok;
         ok = expectContains(indexText, "top-keys-body", "index.html must provide the Top 20 keys table") && ok;
         ok = expectNotContains(indexText, "https://d3js.org", "index.html must not reference the external d3 CDN") && ok;
         ok = expectNotContains(indexText, "https://cdn.jsdelivr.net", "index.html must not reference the external jsdelivr CDN") && ok;
@@ -70,7 +76,7 @@ int main() {
         ok = expect(script->contentType == "application/javascript; charset=utf-8", "main.js MIME type mismatch") && ok;
         const auto mainText = resourceText(*script);
         ok = expectContains(mainText, "loadTopKeys", "main.js must load the Top 20 keys ranking") && ok;
-        ok = expectContains(mainText, "getDefaultDateRange", "main.js must compute the default last-7-days range") && ok;
+        ok = expectContains(mainText, "getDefaultDateRange", "main.js must compute the default last-30-days range") && ok;
         ok = expectContains(mainText, "applyPresetRange", "main.js must wire shortcut date ranges") && ok;
         ok = expectContains(mainText, "exportData", "main.js must export CSV and JSON data") && ok;
     }
@@ -83,8 +89,24 @@ int main() {
         ok = expectContains(keyboardText, "code: 36, label: 'Home'", "Keyboard layout should include Home") && ok;
         ok = expectContains(keyboardText, "code: 39, label: 'Right'", "Keyboard layout should include Right") && ok;
         ok = expectContains(keyboardText, "code: 98, label: '2'", "Keyboard layout should include Numpad 2") && ok;
-        ok = expectContains(keyboardText, "initZoomControls", "Keyboard heatmap should support zoom controls") && ok;
+        ok = expectContains(keyboardText, "initFixedLayout", "Keyboard heatmap should use a fixed responsive layout") && ok;
+        ok = expectNotContains(keyboardText, "d3.zoom", "Keyboard heatmap must not register interactive zoom") && ok;
+        ok = expectNotContains(keyboardText, "h337.create", "Keyboard heatmap must not render circular canvas overlays") && ok;
+        ok = expectContains(keyboardText, "--key-heat-start", "Keyboard heatmap should define a gradient start color") && ok;
+        ok = expectContains(keyboardText, "--key-heat-end", "Keyboard heatmap should define a gradient end color") && ok;
+        ok = expectContains(keyboardText, "createLinearGradient(key.x", "PNG export should use per-key linear gradients") && ok;
+        ok = expectContains(keyboardText, "numpadGap: 30", "Numpad should be separated from navigation keys by 30 pixels") && ok;
+        ok = expectContains(keyboardText, "width: 1430", "Standard keyboard width should include the numpad gap") && ok;
         ok = expectContains(keyboardText, "exportPng", "Keyboard heatmap should export PNG") && ok;
+    }
+
+    auto calendarScript = keyrecord::findEmbeddedResource("/js/calendar.js");
+    ok = expect(calendarScript.has_value(), "calendar.js resource should resolve") && ok;
+    if (calendarScript) {
+        const auto calendarText = resourceText(*calendarScript);
+        ok = expectContains(calendarText, "setTrendRange", "Calendar trend must have an independent range setter") && ok;
+        ok = expectContains(calendarText, "getAnnualRange", "Daily calendar must compute a fixed annual window") && ok;
+        ok = expectContains(calendarText, "renderCalendar", "Daily calendar must render independently from the trend") && ok;
     }
 
     auto stylesheet = keyrecord::findEmbeddedResource("css/style.css");
@@ -95,6 +117,8 @@ int main() {
         const auto stylesheetText = resourceText(*stylesheet);
         ok = expectContains(stylesheetText, "@media print", "style.css must include print optimization") && ok;
         ok = expectContains(stylesheetText, "body[data-theme=\"dark\"]", "style.css must include dark theme styles") && ok;
+        ok = expectContains(stylesheetText, "linear-gradient(135deg", "Heated keycaps should use a 135-degree gradient") && ok;
+        ok = expectContains(stylesheetText, "width: 1430px", "Keyboard stylesheet should include the expanded standard width") && ok;
     }
 
     auto d3Vendor = keyrecord::findEmbeddedResource("/vendor/d3.v7.min.js");

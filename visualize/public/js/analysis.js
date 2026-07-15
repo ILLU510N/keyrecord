@@ -4,16 +4,18 @@ const Analysis = {
   focusDate: null,
   weekdayLabels: ['周日', '周一', '周二', '周三', '周四', '周五', '周六'],
   timeline: { events: [], timers: [], playing: false, loading: false, loadedDate: null },
-  live: { enabled: false, timer: null, getRange: null, onTick: null },
+  live: { enabled: false, timer: null, getRange: null, onTick: null, refreshing: false },
   visible: false,
   loaded: false,
   currentRangeKey: null,
   observer: null,
+  updateVersion: 0,
 
   init() {
     const ids = [
       'hourly-heatmap', 'speed-chart', 'speed-date', 'speed-status',
-      'region-chart', 'hand-chart', 'combo-body',
+      'region-chart', 'hand-chart', 'combo-list',
+      'activity-days', 'activity-peak-date', 'activity-peak-detail', 'activity-hourly', 'activity-minute',
       'timeline-date', 'timeline-status', 'timeline-play', 'timeline-stop',
       'timeline-speed', 'timeline-current', 'timeline-progress-bar',
       'live-toggle', 'live-status',
@@ -80,6 +82,7 @@ const Analysis = {
 
     this.loaded = true;
     this.currentRangeKey = rangeKey;
+    const version = ++this.updateVersion;
     this.focusDate = end || start || null;
     this.setText('speed-date', this.focusDate || '全部');
     this.setText('timeline-date', this.focusDate || '全部');
@@ -87,13 +90,21 @@ const Analysis = {
 
     const rangeQuery = this.rangeQuery(start, end);
 
-    await Promise.all([
-      this.loadInto('hourly-heatmap', '/api/hourly-heatmap' + rangeQuery, (rows) => this.renderHourlyHeatmap(rows)),
-      this.loadInto('region-chart', '/api/region-stats' + rangeQuery, (rows) => this.renderRegion(rows)),
-      this.loadInto('hand-chart', '/api/hand-stats' + rangeQuery, (rows) => this.renderHand(rows)),
-      this.loadCombos(rangeQuery),
-      this.loadSpeed(this.focusDate)
+    this.setText('speed-status', '加载中…');
+    const [hourly, region, hand, combos, speed] = await Promise.all([
+      this.fetchRows('/api/hourly-heatmap' + rangeQuery),
+      this.fetchRows('/api/region-stats' + rangeQuery),
+      this.fetchRows('/api/hand-stats' + rangeQuery),
+      this.fetchRows('/api/combos' + rangeQuery + (rangeQuery ? '&' : '?') + 'limit=8'),
+      this.fetchRows('/api/speed?date=' + encodeURIComponent(this.focusDate) + '&bucket=5')
     ]);
+    if (version !== this.updateVersion) return;
+    this.renderHourlyHeatmap(hourly.rows);
+    this.renderRegion(region.rows);
+    this.renderHand(hand.rows);
+    this.renderCombos(combos.rows);
+    this.renderSpeed(speed.rows);
+    this.setText('speed-status', speed.error ? '加载失败' : (speed.rows.length ? '已聚合' : '暂无数据'));
   },
 
   resetTimelineForDate(date) {
@@ -118,6 +129,16 @@ const Analysis = {
 
   async fetchJson(url, options) {
     return ApiCache.fetchJson(url, options);
+  },
+
+  async fetchRows(url) {
+    try {
+      const rows = await this.fetchJson(url);
+      return { rows: Array.isArray(rows) ? rows : [], error: null };
+    } catch (error) {
+      console.error('加载分析数据失败 ' + url + ':', error);
+      return { rows: [], error };
+    }
   },
 
   async loadInto(elementId, url, render) {
@@ -212,37 +233,42 @@ const Analysis = {
       return;
     }
 
-    const bar = document.createElement('div');
-    bar.className = 'hand-bar';
+    const donut = document.createElement('div');
+    donut.className = 'hand-donut';
     const legend = document.createElement('div');
     legend.className = 'hand-legend';
+    const values = segments.map((seg) => ({ ...seg, count: counts[seg.key] || 0 }));
+    let offset = 0;
+    const ends = {};
+    values.forEach((seg) => {
+      offset += seg.count / total * 100;
+      ends[seg.key] = offset;
+    });
+    donut.style.setProperty('--left-end', (ends.left || 0) + '%');
+    donut.style.setProperty('--right-end', (ends.right || ends.left || 0) + '%');
+    donut.style.setProperty('--both-end', (ends.both || ends.right || ends.left || 0) + '%');
+    const dominant = values.slice().sort((a, b) => b.count - a.count)[0];
+    donut.dataset.center = dominant.label + '\n' + (dominant.count / total * 100).toFixed(1) + '%';
 
-    segments.forEach((seg) => {
+    values.forEach((seg) => {
       const count = counts[seg.key] || 0;
       if (count <= 0) return;
       const ratioText = (count / total * 100).toFixed(1);
-      const valueText = seg.label + ': ' + count.toLocaleString() + ' (' + ratioText + '%)';
-
-      // 堆叠条中的彩色分段
-      const part = document.createElement('span');
-      part.className = 'hand-seg hand-seg--' + seg.key;
-      part.style.width = (count / total * 100) + '%';
-      part.title = valueText;
-      bar.appendChild(part);
-
-      // 图例项：色块 + 文字，色块与对应分段同色
       const item = document.createElement('span');
       item.className = 'hand-legend-item';
       const swatch = document.createElement('span');
-      swatch.className = 'hand-swatch hand-seg--' + seg.key;
+      swatch.className = 'hand-swatch hand-swatch--' + seg.key;
       const text = document.createElement('span');
-      text.textContent = valueText;
+      text.textContent = seg.label;
+      const value = document.createElement('strong');
+      value.textContent = ratioText + '%';
       item.appendChild(swatch);
       item.appendChild(text);
+      item.appendChild(value);
       legend.appendChild(item);
     });
 
-    container.appendChild(bar);
+    container.appendChild(donut);
     container.appendChild(legend);
   },
 
@@ -282,11 +308,10 @@ const Analysis = {
   },
 
   async loadCombos(rangeQuery) {
-    const body = this.elements['combo-body'];
-    if (!body) return;
+    const list = this.elements['combo-list'];
+    if (!list) return;
     try {
-      // 拉取后端允许的最大数量（MAX_COMBOS_LIMIT=100），卡片默认仅显示前 10 行，其余通过滚动条查看。
-      const rows = await this.fetchJson('/api/combos' + rangeQuery + (rangeQuery ? '&' : '?') + 'limit=100');
+      const rows = await this.fetchJson('/api/combos' + rangeQuery + (rangeQuery ? '&' : '?') + 'limit=8');
       this.renderCombos(Array.isArray(rows) ? rows : []);
     } catch (error) {
       console.error('加载组合统计失败:', error);
@@ -295,24 +320,42 @@ const Analysis = {
   },
 
   renderCombos(rows) {
-    const body = this.elements['combo-body'];
-    if (!body) return;
-    body.innerHTML = '';
+    const list = this.elements['combo-list'];
+    if (!list) return;
+    list.innerHTML = '';
     if (!rows.length) {
-      body.innerHTML = '<tr><td colspan="2" class="empty-cell">当前范围暂无组合数据</td></tr>';
+      list.innerHTML = '<p class="empty-cell">当前范围暂无组合数据</p>';
       return;
     }
-    rows.forEach((row) => {
-      const tr = document.createElement('tr');
-      const combo = document.createElement('td');
-      combo.textContent = row.combo;
-      const count = document.createElement('td');
-      count.className = 'count-cell';
-      count.textContent = (Number(row.count) || 0).toLocaleString();
-      tr.appendChild(combo);
-      tr.appendChild(count);
-      body.appendChild(tr);
+    rows.slice(0, 8).forEach((row, index) => {
+      const item = document.createElement('div');
+      item.className = 'combo-row';
+      item.innerHTML = '<span class="combo-rank">' + (index + 1) + '</span><span class="combo-name"></span><span class="combo-count">' + DateUtils.formatNumber(row.count) + '</span>';
+      item.querySelector('.combo-name').textContent = row.combo;
+      list.appendChild(item);
     });
+  },
+
+  renderActivityOverview(rows, start, end) {
+    const total = rows.reduce((sum, row) => sum + (Number(row.count) || 0), 0);
+    const activeDays = rows.filter((row) => Number(row.count) > 0).length;
+    const naturalDays = DateUtils.rangeDays(start, end);
+    const peak = rows.reduce((best, row) => {
+      const count = Number(row.count) || 0;
+      if (!best || count > best.count || (count === best.count && row.date > best.date)) return { date: row.date, count };
+      return best;
+    }, null);
+    this.setText('activity-days', DateUtils.formatNumber(activeDays));
+    this.setText('activity-hourly', DateUtils.formatNumber(naturalDays > 0 ? Math.round(total / naturalDays / 24) : 0));
+    this.setText('activity-minute', (naturalDays > 0 ? total / naturalDays / 1440 : 0).toFixed(1));
+    if (peak && peak.count > 0) {
+      const date = DateUtils.parse(peak.date);
+      this.setText('activity-peak-date', peak.date.slice(5) + ' · ' + DateUtils.weekday(date));
+      this.setText('activity-peak-detail', DateUtils.formatNumber(peak.count) + ' 次');
+    } else {
+      this.setText('activity-peak-date', '—');
+      this.setText('activity-peak-detail', '0 次');
+    }
   },
 
   async loadSpeed(date) {
@@ -517,9 +560,11 @@ const Analysis = {
     }
     this.setText('live-status', '监控中（每 5 秒刷新）');
     this.live.timer = setInterval(() => {
-      if (typeof this.live.onTick === 'function') {
-        this.live.onTick();
-      }
+      if (typeof this.live.onTick !== 'function' || this.live.refreshing) return;
+      this.live.refreshing = true;
+      Promise.resolve(this.live.onTick())
+        .catch((error) => console.error('实时刷新失败:', error))
+        .finally(() => { this.live.refreshing = false; });
     }, 5000);
   },
 
