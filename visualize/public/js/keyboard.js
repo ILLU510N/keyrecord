@@ -6,9 +6,13 @@ const KeyboardHeatmap = {
   totalElement: null,
   rangeElement: null,
   tooltipElement: null,
-  heatmapInstance: null,
-  zoom: null,
+  resizeObserver: null,
   data: [],
+  mode: 'standard',
+  rangeTotal: 0,
+  requestVersion: 0,
+  currentRange: { start: null, end: null },
+  numpadGap: 30,
   layout: [
     // 坐标需与 src/keyboard_layout.cpp 保持一致。
     { code: 27, label: 'Esc', x: 50, y: 20, width: 50, height: 50 },
@@ -131,20 +135,25 @@ const KeyboardHeatmap = {
       return;
     }
 
+    this.layout = this.layout.map((key) => ({ ...key, region: this.getKeyRegion(key) }));
     this.renderKeyboardLayout();
-    this.initHeatmap();
-    this.initZoomControls();
+    this.initModeControls();
+    this.initFixedLayout();
+    const refreshButton = document.getElementById('keyboard-refresh');
+    if (refreshButton) refreshButton.addEventListener('click', () => this.refresh());
     console.log('✓ 键盘热力图初始化完成');
   },
 
   renderKeyboardLayout() {
     const fragment = document.createDocumentFragment();
+    const layout = this.getActiveLayout();
 
-    this.layout.forEach((key) => {
+    layout.forEach((key) => {
       const keyElement = document.createElement('button');
       keyElement.type = 'button';
       keyElement.className = 'keyboard-key';
       keyElement.dataset.vkCode = String(key.code);
+      keyElement.dataset.region = key.region;
       keyElement.style.left = key.x + 'px';
       keyElement.style.top = key.y + 'px';
       keyElement.style.width = key.width + 'px';
@@ -159,100 +168,114 @@ const KeyboardHeatmap = {
     this.container.innerHTML = '';
     this.container.appendChild(fragment);
 
-    this.tooltipElement = document.createElement('div');
-    this.tooltipElement.className = 'tooltip keyboard-tooltip';
-    this.tooltipElement.style.display = 'none';
-    document.body.appendChild(this.tooltipElement);
+    const dimensions = this.getDimensions();
+    this.container.style.width = dimensions.width + 'px';
+    this.container.style.height = dimensions.height + 'px';
+    this.stageElement.style.width = dimensions.width + 'px';
+    this.stageElement.style.height = dimensions.height + 'px';
+
+    if (!this.tooltipElement) {
+      this.tooltipElement = document.createElement('div');
+      this.tooltipElement.className = 'tooltip keyboard-tooltip';
+      this.tooltipElement.style.display = 'none';
+      document.body.appendChild(this.tooltipElement);
+    }
+    this.renderHeatmapData();
   },
 
-  initHeatmap() {
-    if (!window.h337) {
-      this.setStatus('heatmap.js 未加载，已显示键盘布局');
-      return;
-    }
+  getKeyRegion(key) {
+    if (key.y === 20) return 'function';
+    if (key.x >= 1140) return 'numpad';
+    if (key.x >= 970) return 'navigation';
+    if ([160, 161, 162, 163, 164, 165, 20].includes(key.code)) return 'modifier';
+    if (key.code >= 65 && key.code <= 90) return 'letters';
+    if (key.code >= 48 && key.code <= 57) return 'digits';
+    return 'primary';
+  },
 
-    this.heatmapInstance = h337.create({
-      container: this.container,
-      radius: 32,
-      maxOpacity: 0.78,
-      minOpacity: 0.15,
-      blur: 0.88,
-      gradient: {
-        0.0: '#3b82f6',
-        0.45: '#22c55e',
-        0.72: '#facc15',
-        1.0: '#ef4444'
-      }
+  getActiveLayout() {
+    if (this.mode === 'standard') {
+      // 数字区独立右移，保留方向键原坐标和数字区内部间距。
+      return this.layout.map((key) => key.region === 'numpad' ? { ...key, x: key.x + this.numpadGap } : key);
+    }
+    return this.layout
+      .filter((key) => key.x < 950 && key.y >= 80)
+      .map((key) => ({ ...key, x: key.x - 30, y: key.y - 60 }));
+  },
+
+  getDimensions() {
+    return this.mode === 'compact' ? { width: 980, height: 330 } : { width: 1430, height: 410 };
+  },
+
+  initModeControls() {
+    ['standard', 'compact'].forEach((mode) => {
+      const button = document.getElementById('keyboard-mode-' + mode);
+      if (button) button.addEventListener('click', () => this.setMode(mode));
     });
   },
 
-  initZoomControls() {
-    if (!window.d3 || !this.viewportElement || !this.stageElement) {
-      this.setStatus('缩放组件未加载，已显示键盘布局');
-      return;
+  setMode(mode) {
+    if (mode !== 'standard' && mode !== 'compact') return;
+    this.mode = mode;
+    ['standard', 'compact'].forEach((value) => {
+      const button = document.getElementById('keyboard-mode-' + value);
+      if (!button) return;
+      const selected = value === mode;
+      button.classList.toggle('is-selected', selected);
+      button.setAttribute('aria-pressed', String(selected));
+    });
+    this.renderKeyboardLayout();
+    requestAnimationFrame(() => this.fitToViewport());
+  },
+
+  initFixedLayout() {
+    if (!this.viewportElement || !this.stageElement) return;
+    if (window.ResizeObserver) {
+      this.resizeObserver = new ResizeObserver(() => this.fitToViewport());
+      this.resizeObserver.observe(this.viewportElement);
+    } else {
+      window.addEventListener('resize', () => this.fitToViewport());
     }
-
-    this.zoom = d3.zoom()
-      .scaleExtent([0.65, 2.4])
-      .translateExtent([[-520, -260], [1920, 760]])
-      .on('zoom', (event) => {
-        this.applyZoomTransform(event.transform);
-      });
-
-    d3.select(this.viewportElement)
-      .call(this.zoom)
-      .on('dblclick.zoom', null);
-
-    this.bindZoomButton('keyboard-zoom-in', () => this.scaleBy(1.2));
-    this.bindZoomButton('keyboard-zoom-out', () => this.scaleBy(1 / 1.2));
-    this.bindZoomButton('keyboard-zoom-reset', () => this.resetZoom());
+    requestAnimationFrame(() => this.fitToViewport());
   },
 
-  bindZoomButton(id, handler) {
-    const button = document.getElementById(id);
-    if (button) {
-      button.addEventListener('click', handler);
-    }
-  },
-
-  applyZoomTransform(transform) {
-    this.stageElement.style.transform = 'translate(' + transform.x + 'px,' + transform.y + 'px) scale(' + transform.k + ')';
-  },
-
-  scaleBy(factor) {
-    if (!this.zoom || !this.viewportElement) return;
-    d3.select(this.viewportElement)
-      .transition()
-      .duration(160)
-      .call(this.zoom.scaleBy, factor);
-  },
-
-  resetZoom() {
-    if (!this.zoom || !this.viewportElement) return;
-    d3.select(this.viewportElement)
-      .transition()
-      .duration(180)
-      .call(this.zoom.transform, d3.zoomIdentity);
+  fitToViewport() {
+    if (!this.viewportElement || !this.stageElement) return;
+    const dimensions = this.getDimensions();
+    const scale = Math.min(1, (this.viewportElement.clientWidth - 24) / dimensions.width);
+    const offsetX = Math.max(0, (this.viewportElement.clientWidth - dimensions.width * scale) / 2);
+    const offsetY = Math.max(0, (this.viewportElement.clientHeight - dimensions.height * scale) / 2);
+    this.stageElement.style.transform = 'translate(' + offsetX + 'px,' + offsetY + 'px) scale(' + scale + ')';
   },
 
   async loadKeyboardHeatmap(startDate, endDate) {
     if (!this.container) return;
 
     const url = this.buildUrl(startDate, endDate);
+    const version = ++this.requestVersion;
+    this.currentRange = { start: startDate, end: endDate };
     this.setStatus('加载中...');
     this.setRangeLabel(startDate, endDate);
 
     try {
-      this.data = await ApiCache.fetchJson(url);
+      const rows = await ApiCache.fetchJson(url);
+      if (version !== this.requestVersion) return;
+      this.data = Array.isArray(rows) ? rows : [];
       this.renderHeatmapData();
       this.setStatus(this.data.length > 0 ? '已加载' : '暂无可映射按键数据');
       console.log('✓ 键盘热力图数据加载完成: ' + this.data.length + ' 个按键');
     } catch (error) {
+      if (version !== this.requestVersion) return;
       console.error('加载键盘热力图失败:', error);
       this.data = [];
       this.renderHeatmapData();
       this.setStatus('加载失败: ' + error.message);
     }
+  },
+
+  async refresh() {
+    ApiCache.invalidateMatching('/api/heatmap');
+    await this.loadKeyboardHeatmap(this.currentRange.start, this.currentRange.end);
   },
 
   buildUrl(startDate, endDate) {
@@ -268,73 +291,98 @@ const KeyboardHeatmap = {
   },
 
   renderHeatmapData() {
-    const max = this.data.length > 0 ? Math.max(...this.data.map(item => item.count)) : 1;
-    const points = this.data.map(item => ({
-      x: item.x,
-      y: item.y,
-      value: item.count
-    }));
+    const visibleCodes = new Set(this.getActiveLayout().map((key) => String(key.code)));
+    const visibleData = this.data.filter((item) => visibleCodes.has(String(item.vk_code)));
+    const max = visibleData.length > 0 ? Math.max(...visibleData.map((item) => Number(item.count) || 0), 1) : 1;
 
-    if (this.heatmapInstance) {
-      this.heatmapInstance.setData({ max, data: points });
-    }
-
-    this.totalElement.textContent = String(this.data.length);
+    if (this.totalElement) this.totalElement.textContent = String(visibleData.length);
     this.updateKeyStates(max);
+  },
+
+  getHeatChannels(heat) {
+    const value = Math.min(1, Math.max(0, Number(heat) || 0));
+    const stops = [
+      { at: 0, color: [238, 241, 255] },
+      { at: 0.36, color: [205, 209, 255] },
+      { at: 0.7, color: [239, 190, 222] },
+      { at: 1, color: [255, 116, 151] }
+    ];
+    const upperIndex = stops.findIndex((stop) => value <= stop.at);
+    const upper = stops[upperIndex < 0 ? stops.length - 1 : upperIndex];
+    const lower = stops[Math.max(0, (upperIndex < 0 ? stops.length - 1 : upperIndex) - 1)];
+    const progress = upper.at === lower.at ? 0 : (value - lower.at) / (upper.at - lower.at);
+    return lower.color.map((channel, index) => Math.round(channel + (upper.color[index] - channel) * progress));
+  },
+
+  formatHeatColor(channels) {
+    return 'rgb(' + channels.join(', ') + ')';
+  },
+
+  // 使用同一热度两侧的颜色构造完整键帽渐变，避免恢复圆形热点。
+  getHeatGradientColors(heat) {
+    const value = Math.min(1, Math.max(0, Number(heat) || 0));
+    const startChannels = this.getHeatChannels(Math.max(0, value - 0.12));
+    const endChannels = this.getHeatChannels(Math.min(1, value + 0.18));
+    const highlightChannels = startChannels.map((channel) => Math.round(channel + (255 - channel) * 0.18));
+    return {
+      highlight: this.formatHeatColor(highlightChannels),
+      start: this.formatHeatColor(startChannels),
+      end: this.formatHeatColor(endChannels)
+    };
   },
 
   exportPng(range) {
     const canvas = document.createElement('canvas');
-    canvas.width = 1400;
-    canvas.height = 410;
+    const dimensions = this.getDimensions();
+    canvas.width = dimensions.width;
+    canvas.height = dimensions.height;
     const context = canvas.getContext('2d');
     if (!context) {
       this.setStatus('PNG 导出失败: canvas 不可用');
       return;
     }
 
-    this.drawKeyboardExport(context, false);
-
-    const heatmapCanvas = this.container ? this.container.querySelector('.heatmap-canvas') : null;
-    if (heatmapCanvas) {
-      context.drawImage(heatmapCanvas, 0, 0);
-    }
-
-    this.drawKeyboardExport(context, true);
+    this.drawKeyboardExport(context);
 
     const link = document.createElement('a');
     link.href = canvas.toDataURL('image/png');
-    link.download = 'keyrecord_keyboard_' + this.exportRangeToken(range) + '.png';
+    link.download = 'keyrecord_keyboard_' + this.exportRangeToken(range) + '_' + this.mode + '.png';
     document.body.appendChild(link);
     link.click();
     link.remove();
     this.setStatus('PNG 已导出');
   },
 
-  drawKeyboardExport(context, labelsOnly) {
+  drawKeyboardExport(context) {
     const countByCode = new Map(this.data.map(item => [String(item.vk_code), Number(item.count) || 0]));
     const max = this.data.length > 0 ? Math.max(...this.data.map(item => Number(item.count) || 0), 1) : 1;
 
-    if (!labelsOnly) {
-      const background = context.createLinearGradient(0, 0, 0, 410);
-      background.addColorStop(0, '#f8fafc');
-      background.addColorStop(1, '#edf3f8');
-      context.fillStyle = background;
-      context.fillRect(0, 0, 1400, 410);
-    }
+    const dimensions = this.getDimensions();
+    const background = context.createLinearGradient(0, 0, 0, dimensions.height);
+    background.addColorStop(0, '#f8fafc');
+    background.addColorStop(1, '#edf3f8');
+    context.fillStyle = background;
+    context.fillRect(0, 0, dimensions.width, dimensions.height);
 
-    this.layout.forEach((key) => {
+    this.getActiveLayout().forEach((key) => {
       const count = countByCode.get(String(key.code)) || 0;
       const heat = count > 0 ? Math.max(count / max, 0.12) : 0;
 
-      if (!labelsOnly) {
-        this.drawRoundedRect(context, key.x, key.y, key.width, key.height, 6);
-        context.fillStyle = count > 0 ? 'rgba(239, 68, 68, ' + (0.08 + heat * 0.16).toFixed(3) + ')' : '#f1f5f9';
-        context.fill();
-        context.strokeStyle = count > 0 ? 'rgba(239, 68, 68, 0.75)' : '#b8c5d4';
-        context.lineWidth = 1;
-        context.stroke();
+      this.drawRoundedRect(context, key.x, key.y, key.width, key.height, 6);
+      if (count > 0) {
+        const colors = this.getHeatGradientColors(heat);
+        const keyGradient = context.createLinearGradient(key.x, key.y, key.x + key.width, key.y + key.height);
+        keyGradient.addColorStop(0, colors.highlight);
+        keyGradient.addColorStop(0.42, colors.start);
+        keyGradient.addColorStop(1, colors.end);
+        context.fillStyle = keyGradient;
+      } else {
+        context.fillStyle = '#f4f6fb';
       }
+      context.fill();
+      context.strokeStyle = count > 0 ? '#9ca6ce' : '#cbd2e1';
+      context.lineWidth = 1;
+      context.stroke();
 
       context.fillStyle = '#26384d';
       context.font = '600 13px Consolas, monospace';
@@ -372,7 +420,15 @@ const KeyboardHeatmap = {
       const count = countByCode.get(keyElement.dataset.vkCode) || 0;
       keyElement.dataset.count = String(count);
       keyElement.classList.toggle('has-heat', count > 0);
-      keyElement.style.setProperty('--key-heat', count > 0 ? String(Math.max(count / max, 0.12)) : '0');
+      if (count > 0) {
+        const heat = Math.max(Number(count) / max, 0.12);
+        const colors = this.getHeatGradientColors(heat);
+        keyElement.style.setProperty('--key-heat-start', colors.start);
+        keyElement.style.setProperty('--key-heat-end', colors.end);
+      } else {
+        keyElement.style.removeProperty('--key-heat-start');
+        keyElement.style.removeProperty('--key-heat-end');
+      }
     });
   },
 
@@ -383,10 +439,15 @@ const KeyboardHeatmap = {
     const count = dataItem ? dataItem.count : 0;
     const name = dataItem && dataItem.key_name ? dataItem.key_name : key.label;
 
-    this.tooltipElement.innerHTML = '<strong>' + name + '</strong><br>按键数: ' + count.toLocaleString();
+    const ratio = this.rangeTotal > 0 ? count / this.rangeTotal * 100 : 0;
+    this.tooltipElement.innerHTML = '<strong>' + name + '</strong><br>VK Code：' + key.code + '<br>次数：' + DateUtils.formatNumber(count) + '<br>范围占比：' + ratio.toFixed(2) + '%';
     this.tooltipElement.style.display = 'block';
     this.tooltipElement.style.left = (event.pageX + 10) + 'px';
     this.tooltipElement.style.top = (event.pageY - 10) + 'px';
+  },
+
+  setRangeTotal(total) {
+    this.rangeTotal = Math.max(0, Number(total) || 0);
   },
 
   hideKeyTooltip() {
