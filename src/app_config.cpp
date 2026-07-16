@@ -89,6 +89,7 @@ ConfigFileValues parseConfigText(const std::string& text, std::string* warnings)
             if (trimmed.back() == ']') {
                 section = toLower(trim(trimmed.substr(1, trimmed.size() - 2)));
             } else {
+                section.clear();
                 appendWarning(warnings, lineNumber, "missing closing ']' in section header, ignored");
             }
             continue;

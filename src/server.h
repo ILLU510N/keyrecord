@@ -7,7 +7,7 @@
 namespace keyrecord {
 
 struct ServerConfig {
-    std::string address = "0.0.0.0";
+    std::string address = "127.0.0.1";
     unsigned short port = 3000;
     std::string dbPath;
 };

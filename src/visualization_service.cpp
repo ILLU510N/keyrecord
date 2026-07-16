@@ -1,12 +1,14 @@
 #include "visualization_service.h"
 
 #include <chrono>
+#include <iterator>
 #include <utility>
 
 namespace keyrecord {
 namespace {
 
 constexpr auto API_CACHE_TTL = std::chrono::seconds(2);
+constexpr std::size_t MAX_API_CACHE_ENTRIES = 128;
 
 bool isCacheableApiRequest(std::string_view method, std::string_view target) {
     return method == "GET" && target.rfind("/api/", 0) == 0;
@@ -35,6 +37,7 @@ VisualizationService& VisualizationService::operator=(VisualizationService&& oth
     if (this != &other) {
         std::scoped_lock lock(cacheMutex_, other.cacheMutex_);
         database_ = std::move(other.database_);
+        cacheRecency_.clear();
         apiCache_.clear();
     }
     return *this;
@@ -61,8 +64,10 @@ HttpResponse VisualizationService::handleRequest(std::string_view method, std::s
         const auto it = apiCache_.find(key);
         if (it != apiCache_.end()) {
             if (it->second.expiresAt > now) {
+                cacheRecency_.splice(cacheRecency_.end(), cacheRecency_, it->second.recency);
                 return it->second.response;
             }
+            cacheRecency_.erase(it->second.recency);
             apiCache_.erase(it);
         }
     }
@@ -70,10 +75,34 @@ HttpResponse VisualizationService::handleRequest(std::string_view method, std::s
     HttpResponse response = handleHttpRequest(method, target, database_.get());
     if (response.status == 200) {
         std::lock_guard<std::mutex> lock(cacheMutex_);
-        apiCache_[key] = CachedHttpResponse{response, now + API_CACHE_TTL};
+        for (auto it = apiCache_.begin(); it != apiCache_.end();) {
+            if (it->second.expiresAt <= now) {
+                cacheRecency_.erase(it->second.recency);
+                it = apiCache_.erase(it);
+            } else {
+                ++it;
+            }
+        }
+        if (const auto existing = apiCache_.find(key); existing != apiCache_.end()) {
+            cacheRecency_.erase(existing->second.recency);
+            apiCache_.erase(existing);
+        }
+        if (apiCache_.size() >= MAX_API_CACHE_ENTRIES) {
+            apiCache_.erase(cacheRecency_.front());
+            cacheRecency_.pop_front();
+        }
+        cacheRecency_.push_back(key);
+        apiCache_.emplace(
+            key,
+            CachedHttpResponse{response, now + API_CACHE_TTL, std::prev(cacheRecency_.end())});
     }
 
     return response;
+}
+
+std::size_t VisualizationService::cachedResponseCount() const {
+    std::lock_guard<std::mutex> lock(cacheMutex_);
+    return apiCache_.size();
 }
 
 } // namespace keyrecord

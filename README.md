@@ -197,7 +197,7 @@ ctest --test-dir build -C Debug --output-on-failure
 - 默认数据库目录 `~/.config/keyrecord`、目录自动创建和默认数据库文件路径
 - 内嵌静态资源路径规范化、MIME 类型、路径穿越拒绝和 O(log N) 查找前提
 - `/api/info`、`/api/daily-stats`、`/api/keys`、`/api/heatmap` 的 SQLite 查询结果
-- HTTP 路由适配层的静态资源、API query 参数、CORS、OPTIONS、404、405
+- HTTP 路由适配层的静态资源、API query 参数、跨域限制、OPTIONS、404、405
 - 可视化服务运行时的只读库打开失败处理，以及静态资源/API 请求转发
 - 服务端入口参数解析、默认数据库路径、启动前数据库打开和启动 banner 生成
 - 配置文件（`config.ini`）的 INI 解析、配置项优先级、`db_dir`/`db_path` 与端口合法性校验
@@ -210,8 +210,8 @@ ctest --test-dir build -C Debug --output-on-failure
 
 ```ini
 [server]
-# 服务端监听地址，默认 0.0.0.0
-address = 0.0.0.0
+# 服务端监听地址，默认 127.0.0.1；远程访问必须显式配置
+address = 127.0.0.1
 # 服务端监听端口，默认 3000（取值 1..65535）
 port    = 3000         
 
@@ -250,7 +250,7 @@ db_path = D:/data/keyrecord/keyrecord.db
 .\build\Release\keyrecord_server.exe
 ```
 
-默认监听地址为 `http://0.0.0.0:3000/`。默认读取 `%USERPROFILE%\.config\keyrecord\keyrecord.db`；也可以通过第一个参数显式指定数据库路径，或在 `config.ini` 中配置监听地址、端口与数据库位置（详见「配置文件」一节）。如果你修改了 `visualize/public/` 下的静态资源，需要重新执行构建以刷新内嵌资源索引。
+默认监听地址为 `http://127.0.0.1:3000/`，不会向局域网公开按键统计。远程访问必须在 `config.ini` 中显式配置监听地址，并自行提供可信网络边界。默认读取 `%USERPROFILE%\.config\keyrecord\keyrecord.db`；也可以通过第一个参数显式指定数据库路径，或在 `config.ini` 中配置监听地址、端口与数据库位置（详见「配置文件」一节）。如果你修改了 `visualize/public/` 下的静态资源，需要重新执行构建以刷新内嵌资源索引。
 
 ### 停止程序
 

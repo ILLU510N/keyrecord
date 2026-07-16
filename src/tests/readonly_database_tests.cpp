@@ -59,8 +59,10 @@ bool createWritableFixture(const std::filesystem::path& dbPath) {
 int main() {
     const auto dbPath = std::filesystem::temp_directory_path() / "keyrecord_readonly_test.db";
     const auto missingPath = std::filesystem::temp_directory_path() / "keyrecord_missing_readonly_test.db";
+    const auto invalidPath = std::filesystem::temp_directory_path() / "keyrecord_invalid_readonly_test.db";
     std::filesystem::remove(dbPath);
     std::filesystem::remove(missingPath);
+    std::filesystem::remove(invalidPath);
 
     bool ok = expect(createWritableFixture(dbPath), "Failed to create test database");
 
@@ -90,6 +92,21 @@ int main() {
     ok = expect(!errorMessage.empty(), "Opening a missing database should return an error message") && ok;
     ok = expect(!std::filesystem::exists(missingPath), "Opening a missing database in read-only mode should not create a file") && ok;
 
+    sqlite3* invalidDatabase = nullptr;
+    ok = expect(sqlite3_open(invalidPath.string().c_str(), &invalidDatabase) == SQLITE_OK,
+                "Failed to create invalid schema fixture") && ok;
+    if (invalidDatabase) {
+        ok = expect(execSql(invalidDatabase, "CREATE TABLE unrelated(value INTEGER);"),
+                    "Failed to seed invalid schema fixture") && ok;
+        sqlite3_close(invalidDatabase);
+    }
+    errorMessage.clear();
+    auto invalid = keyrecord::ReadOnlyDatabase::open(invalidPath.string(), &errorMessage);
+    ok = expect(!invalid.has_value(), "Database without keys schema should be rejected") && ok;
+    ok = expect(errorMessage.find("invalid keyrecord database schema") != std::string::npos,
+                "Invalid schema should return a clear error") && ok;
+
     std::filesystem::remove(dbPath);
+    std::filesystem::remove(invalidPath);
     return ok ? 0 : 1;
 }

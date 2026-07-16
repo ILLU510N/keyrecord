@@ -4,5 +4,8 @@
 
 #include <string>
 
-void initKeyMap();
-std::string getKeyName(keyrecord::KeyCode vkCode);
+namespace keyrecord {
+
+std::string getKeyName(KeyCode vkCode);
+
+} // namespace keyrecord

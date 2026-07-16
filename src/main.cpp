@@ -1,5 +1,23 @@
 #include "tray_app.h"
 
+#include "platform/platform_util.h"
+
+#include <exception>
+#include <string>
+
+namespace {
+
+int runKeyrecordAppSafely() {
+    try {
+        return runKeyrecordApp();
+    } catch (const std::exception& ex) {
+        keyrecord::showError(std::string("Unexpected startup failure: ") + ex.what());
+        return 1;
+    }
+}
+
+} // namespace
+
 #ifdef _WIN32
 #ifndef NOMINMAX
 #define NOMINMAX
@@ -11,10 +29,10 @@ int WINAPI WinMain(
     _In_opt_ HINSTANCE,
     _In_ LPSTR,
     _In_ int) {
-    return runKeyrecordApp();
+    return runKeyrecordAppSafely();
 }
 #else
 int main() {
-    return runKeyrecordApp();
+    return runKeyrecordAppSafely();
 }
 #endif

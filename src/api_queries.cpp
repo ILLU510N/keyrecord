@@ -9,6 +9,7 @@
 #include <array>
 #include <cstdint>
 #include <iomanip>
+#include <iostream>
 #include <optional>
 #include <sstream>
 #include <string>
@@ -24,17 +25,13 @@ ApiResponse jsonOk(std::string body) {
 }
 
 ApiResponse jsonError(sqlite3* database) {
-    std::string message = database ? sqlite3_errmsg(database) : "database is null";
-    std::string body = "{\"error\":\"";
-    body.reserve(message.size() + 12);
-    for (const char ch : message) {
-        if (ch == '"' || ch == '\\') {
-            body.push_back('\\');
-        }
-        body.push_back(ch);
-    }
-    body += "\"}";
-    return ApiResponse{500, "application/json; charset=utf-8", std::move(body)};
+    std::cerr << "database query failed: "
+              << (database ? sqlite3_errmsg(database) : "database is null") << "\n";
+    return ApiResponse{
+        500,
+        "application/json; charset=utf-8",
+        "{\"error\":\"database query failed\"}",
+    };
 }
 
 void appendJsonString(std::string& output, std::string_view value) {
@@ -104,7 +101,7 @@ bool bindText(sqlite3_stmt* stmt, int index, std::string_view value) {
     return sqlite3_bind_text(stmt, index, value.data(), static_cast<int>(value.size()), SQLITE_TRANSIENT) == SQLITE_OK;
 }
 
-bool tableExists(sqlite3* database, const char* tableName) {
+bool tableExists(sqlite3* database, const char* tableName, bool& exists) {
     sqlite3_stmt* stmt = nullptr;
     const char* sql = "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ? LIMIT 1";
     if (!prepare(database, sql, &stmt)) {
@@ -116,18 +113,32 @@ bool tableExists(sqlite3* database, const char* tableName) {
         return false;
     }
 
-    const bool exists = sqlite3_step(stmt) == SQLITE_ROW;
+    int rc = sqlite3_step(stmt);
+    exists = rc == SQLITE_ROW;
+    if (rc == SQLITE_ROW) {
+        rc = sqlite3_step(stmt);
+    }
     sqlite3_finalize(stmt);
-    return exists;
+    return rc == SQLITE_DONE;
 }
 
-bool hasSummaryTables(sqlite3* database) {
-    return tableExists(database, "daily_key_stats") && tableExists(database, "daily_hour_stats");
+bool hasSummaryTables(sqlite3* database, bool& exists) {
+    bool hasDailyKeyStats = false;
+    bool hasDailyHourStats = false;
+    if (!tableExists(database, "daily_key_stats", hasDailyKeyStats) ||
+        !tableExists(database, "daily_hour_stats", hasDailyHourStats)) {
+        return false;
+    }
+    exists = hasDailyKeyStats && hasDailyHourStats;
+    return true;
 }
 
 ApiResponse queryKeysWithoutRange(sqlite3* database, int limit) {
     sqlite3_stmt* stmt = nullptr;
-    const bool useSummary = hasSummaryTables(database);
+    bool useSummary = false;
+    if (!hasSummaryTables(database, useSummary)) {
+        return jsonError(database);
+    }
     const char* sql = useSummary
         ? "SELECT key_name, vk_code, SUM(count) as count FROM daily_key_stats "
           "GROUP BY key_name, vk_code ORDER BY count DESC LIMIT ?"
@@ -137,11 +148,15 @@ ApiResponse queryKeysWithoutRange(sqlite3* database, int limit) {
     if (!prepare(database, sql, &stmt)) {
         return jsonError(database);
     }
-    sqlite3_bind_int(stmt, 1, limit);
+    if (sqlite3_bind_int(stmt, 1, limit) != SQLITE_OK) {
+        sqlite3_finalize(stmt);
+        return jsonError(database);
+    }
 
     std::string body = "[";
     bool first = true;
-    while (sqlite3_step(stmt) == SQLITE_ROW) {
+    int stepResult = SQLITE_OK;
+    while ((stepResult = sqlite3_step(stmt)) == SQLITE_ROW) {
         if (!first) {
             body.push_back(',');
         }
@@ -155,12 +170,18 @@ ApiResponse queryKeysWithoutRange(sqlite3* database, int limit) {
     body.push_back(']');
 
     sqlite3_finalize(stmt);
+    if (stepResult != SQLITE_DONE) {
+        return jsonError(database);
+    }
     return jsonOk(std::move(body));
 }
 
 ApiResponse queryKeysWithRange(sqlite3* database, std::string_view startDate, std::string_view endDate, int limit) {
     sqlite3_stmt* stmt = nullptr;
-    const bool useSummary = hasSummaryTables(database);
+    bool useSummary = false;
+    if (!hasSummaryTables(database, useSummary)) {
+        return jsonError(database);
+    }
     const char* sql = useSummary
         ? "SELECT key_name, vk_code, SUM(count) as count FROM daily_key_stats "
           "WHERE date BETWEEN ? AND ? "
@@ -180,7 +201,8 @@ ApiResponse queryKeysWithRange(sqlite3* database, std::string_view startDate, st
 
     std::string body = "[";
     bool first = true;
-    while (sqlite3_step(stmt) == SQLITE_ROW) {
+    int stepResult = SQLITE_OK;
+    while ((stepResult = sqlite3_step(stmt)) == SQLITE_ROW) {
         if (!first) {
             body.push_back(',');
         }
@@ -194,13 +216,17 @@ ApiResponse queryKeysWithRange(sqlite3* database, std::string_view startDate, st
     body.push_back(']');
 
     sqlite3_finalize(stmt);
+    if (stepResult != SQLITE_DONE) {
+        return jsonError(database);
+    }
     return jsonOk(std::move(body));
 }
 
-std::string heatmapRowsToJson(sqlite3_stmt* stmt) {
+std::optional<std::string> heatmapRowsToJson(sqlite3_stmt* stmt) {
     std::string body = "[";
     bool first = true;
-    while (sqlite3_step(stmt) == SQLITE_ROW) {
+    int stepResult = SQLITE_OK;
+    while ((stepResult = sqlite3_step(stmt)) == SQLITE_ROW) {
         const int vkCode = sqlite3_column_int(stmt, 0);
         const auto position = getKeyPosition(vkCode);
         if (!position) {
@@ -222,6 +248,9 @@ std::string heatmapRowsToJson(sqlite3_stmt* stmt) {
         body.push_back('}');
     }
     body.push_back(']');
+    if (stepResult != SQLITE_DONE) {
+        return std::nullopt;
+    }
     return body;
 }
 
@@ -231,14 +260,17 @@ ApiResponse queryHeatmapRows(sqlite3* database, const char* sql) {
         return jsonError(database);
     }
 
-    std::string body = heatmapRowsToJson(stmt);
+    auto body = heatmapRowsToJson(stmt);
     sqlite3_finalize(stmt);
-    return jsonOk(std::move(body));
+    return body ? jsonOk(std::move(*body)) : jsonError(database);
 }
 
 ApiResponse queryHeatmapWithDate(sqlite3* database, std::string_view date) {
     sqlite3_stmt* stmt = nullptr;
-    const bool useSummary = hasSummaryTables(database);
+    bool useSummary = false;
+    if (!hasSummaryTables(database, useSummary)) {
+        return jsonError(database);
+    }
     const char* sql = useSummary
         ? "SELECT vk_code, key_name, SUM(count) as count FROM daily_key_stats "
           "WHERE date = ? GROUP BY vk_code, key_name ORDER BY count DESC"
@@ -253,14 +285,17 @@ ApiResponse queryHeatmapWithDate(sqlite3* database, std::string_view date) {
         return jsonError(database);
     }
 
-    std::string body = heatmapRowsToJson(stmt);
+    auto body = heatmapRowsToJson(stmt);
     sqlite3_finalize(stmt);
-    return jsonOk(std::move(body));
+    return body ? jsonOk(std::move(*body)) : jsonError(database);
 }
 
 ApiResponse queryHeatmapWithRange(sqlite3* database, std::string_view startDate, std::string_view endDate) {
     sqlite3_stmt* stmt = nullptr;
-    const bool useSummary = hasSummaryTables(database);
+    bool useSummary = false;
+    if (!hasSummaryTables(database, useSummary)) {
+        return jsonError(database);
+    }
     const char* sql = useSummary
         ? "SELECT vk_code, key_name, SUM(count) as count FROM daily_key_stats "
           "WHERE date BETWEEN ? AND ? GROUP BY vk_code, key_name ORDER BY count DESC"
@@ -275,9 +310,9 @@ ApiResponse queryHeatmapWithRange(sqlite3* database, std::string_view startDate,
         return jsonError(database);
     }
 
-    std::string body = heatmapRowsToJson(stmt);
+    auto body = heatmapRowsToJson(stmt);
     sqlite3_finalize(stmt);
-    return jsonOk(std::move(body));
+    return body ? jsonOk(std::move(*body)) : jsonError(database);
 }
 
 // 可选的日期过滤：优先使用 start/end 范围，否则单日，否则全量。
@@ -309,7 +344,10 @@ bool bindRange(sqlite3_stmt* stmt, const RangeFilter& filter, int startIndex) {
 
 // 拉取 (vk_code, count) 聚合，供分区与左右手统计在 C++ 侧归类。
 std::optional<std::vector<std::pair<int, std::int64_t>>> fetchKeyCounts(sqlite3* database, const RangeFilter& filter) {
-    const bool useSummary = hasSummaryTables(database);
+    bool useSummary = false;
+    if (!hasSummaryTables(database, useSummary)) {
+        return std::nullopt;
+    }
     const std::string sql = useSummary
         ? "SELECT vk_code, SUM(count) FROM daily_key_stats" + rangeWhereClause(filter) + " GROUP BY vk_code"
         : "SELECT vk_code, COUNT(*) FROM keys" + rangeWhereClause(filter) + " GROUP BY vk_code";
@@ -320,10 +358,14 @@ std::optional<std::vector<std::pair<int, std::int64_t>>> fetchKeyCounts(sqlite3*
     }
 
     std::vector<std::pair<int, std::int64_t>> counts;
-    while (sqlite3_step(stmt) == SQLITE_ROW) {
+    int stepResult = SQLITE_OK;
+    while ((stepResult = sqlite3_step(stmt)) == SQLITE_ROW) {
         counts.emplace_back(sqlite3_column_int(stmt, 0), sqlite3_column_int64(stmt, 1));
     }
     sqlite3_finalize(stmt);
+    if (stepResult != SQLITE_DONE) {
+        return std::nullopt;
+    }
     return counts;
 }
 
@@ -376,7 +418,10 @@ std::optional<std::string_view> modifierLabel(int vkCode) {
 
 ApiResponse queryInfo(sqlite3* database) {
     sqlite3_stmt* stmt = nullptr;
-    const bool useSummary = hasSummaryTables(database);
+    bool useSummary = false;
+    if (!hasSummaryTables(database, useSummary)) {
+        return jsonError(database);
+    }
     const char* sql = useSummary
         ? "SELECT COALESCE(SUM(count), 0), MIN(date), MAX(date), COUNT(DISTINCT vk_code) FROM daily_key_stats"
         : "SELECT COUNT(*), MIN(date), MAX(date), COUNT(DISTINCT vk_code) FROM keys";
@@ -398,13 +443,20 @@ ApiResponse queryInfo(sqlite3* database) {
         return jsonError(database);
     }
 
+    const int finalStepResult = sqlite3_step(stmt);
     sqlite3_finalize(stmt);
+    if (finalStepResult != SQLITE_DONE) {
+        return jsonError(database);
+    }
     return jsonOk(std::move(body));
 }
 
 ApiResponse queryDailyStats(sqlite3* database) {
     sqlite3_stmt* stmt = nullptr;
-    const bool useSummary = hasSummaryTables(database);
+    bool useSummary = false;
+    if (!hasSummaryTables(database, useSummary)) {
+        return jsonError(database);
+    }
     const char* sql = useSummary
         ? "SELECT date, SUM(count) as count FROM daily_key_stats GROUP BY date ORDER BY date"
         : "SELECT date, COUNT(*) as count FROM keys GROUP BY date ORDER BY date";
@@ -414,7 +466,8 @@ ApiResponse queryDailyStats(sqlite3* database) {
 
     std::string body = "[";
     bool first = true;
-    while (sqlite3_step(stmt) == SQLITE_ROW) {
+    int stepResult = SQLITE_OK;
+    while ((stepResult = sqlite3_step(stmt)) == SQLITE_ROW) {
         if (!first) {
             body.push_back(',');
         }
@@ -427,12 +480,18 @@ ApiResponse queryDailyStats(sqlite3* database) {
     body.push_back(']');
 
     sqlite3_finalize(stmt);
+    if (stepResult != SQLITE_DONE) {
+        return jsonError(database);
+    }
     return jsonOk(std::move(body));
 }
 
 ApiResponse queryHourlyStats(sqlite3* database, std::string_view date) {
     sqlite3_stmt* stmt = nullptr;
-    const bool useSummary = hasSummaryTables(database);
+    bool useSummary = false;
+    if (!hasSummaryTables(database, useSummary)) {
+        return jsonError(database);
+    }
     const char* sql = useSummary
         ? "SELECT hour, count FROM daily_hour_stats "
           "WHERE date = ? ORDER BY hour"
@@ -449,7 +508,8 @@ ApiResponse queryHourlyStats(sqlite3* database, std::string_view date) {
 
     std::string body = "[";
     bool first = true;
-    while (sqlite3_step(stmt) == SQLITE_ROW) {
+    int stepResult = SQLITE_OK;
+    while ((stepResult = sqlite3_step(stmt)) == SQLITE_ROW) {
         if (!first) {
             body.push_back(',');
         }
@@ -461,6 +521,9 @@ ApiResponse queryHourlyStats(sqlite3* database, std::string_view date) {
     body.push_back(']');
 
     sqlite3_finalize(stmt);
+    if (stepResult != SQLITE_DONE) {
+        return jsonError(database);
+    }
     return jsonOk(std::move(body));
 }
 
@@ -486,7 +549,10 @@ ApiResponse queryHeatmap(
     if (date) {
         return queryHeatmapWithDate(database, *date);
     }
-    const bool useSummary = hasSummaryTables(database);
+    bool useSummary = false;
+    if (!hasSummaryTables(database, useSummary)) {
+        return jsonError(database);
+    }
     return queryHeatmapRows(
         database,
         useSummary
@@ -500,7 +566,10 @@ ApiResponse queryHourlyHeatmap(
     std::optional<std::string_view> startDate,
     std::optional<std::string_view> endDate) {
     const RangeFilter filter{std::nullopt, startDate, endDate};
-    const bool useSummary = hasSummaryTables(database);
+    bool useSummary = false;
+    if (!hasSummaryTables(database, useSummary)) {
+        return jsonError(database);
+    }
     const std::string sql = useSummary
         ? "SELECT CAST(strftime('%w', date) AS INTEGER) AS weekday, hour, SUM(count) AS count "
           "FROM daily_hour_stats" +
@@ -517,7 +586,8 @@ ApiResponse queryHourlyHeatmap(
 
     std::string body = "[";
     bool first = true;
-    while (sqlite3_step(stmt) == SQLITE_ROW) {
+    int stepResult = SQLITE_OK;
+    while ((stepResult = sqlite3_step(stmt)) == SQLITE_ROW) {
         if (!first) {
             body.push_back(',');
         }
@@ -530,6 +600,9 @@ ApiResponse queryHourlyHeatmap(
     body.push_back(']');
 
     sqlite3_finalize(stmt);
+    if (stepResult != SQLITE_DONE) {
+        return jsonError(database);
+    }
     return jsonOk(std::move(body));
 }
 
@@ -548,7 +621,8 @@ ApiResponse queryTimeline(sqlite3* database, std::string_view date, int limit) {
 
     std::string body = "[";
     bool first = true;
-    while (sqlite3_step(stmt) == SQLITE_ROW) {
+    int stepResult = SQLITE_OK;
+    while ((stepResult = sqlite3_step(stmt)) == SQLITE_ROW) {
         if (!first) {
             body.push_back(',');
         }
@@ -562,6 +636,9 @@ ApiResponse queryTimeline(sqlite3* database, std::string_view date, int limit) {
     body.push_back(']');
 
     sqlite3_finalize(stmt);
+    if (stepResult != SQLITE_DONE) {
+        return jsonError(database);
+    }
     return jsonOk(std::move(body));
 }
 
@@ -587,7 +664,8 @@ ApiResponse queryCombos(
     std::string_view modifierName;
     std::int64_t modifierTs = 0;
 
-    while (sqlite3_step(stmt) == SQLITE_ROW) {
+    int stepResult = SQLITE_OK;
+    while ((stepResult = sqlite3_step(stmt)) == SQLITE_ROW) {
         const std::int64_t ts = sqlite3_column_int64(stmt, 0);
         const int vk = sqlite3_column_int(stmt, 1);
 
@@ -600,14 +678,25 @@ ApiResponse queryCombos(
             continue;
         }
 
-        if (haveModifier && ts - modifierTs <= 1) {
-            std::string combo(modifierName);
-            combo.push_back('+');
-            combo += columnText(stmt, 2);
-            ++comboCounts[combo];
+        if (!haveModifier) {
+            continue;
         }
+
+        const std::int64_t elapsed = ts - modifierTs;
+        if (elapsed < 0 || elapsed > 1) {
+            haveModifier = false;
+            continue;
+        }
+
+        std::string combo(modifierName);
+        combo.push_back('+');
+        combo += columnText(stmt, 2);
+        ++comboCounts[combo];
     }
     sqlite3_finalize(stmt);
+    if (stepResult != SQLITE_DONE) {
+        return jsonError(database);
+    }
 
     std::vector<std::pair<std::string, std::int64_t>> ordered(comboCounts.begin(), comboCounts.end());
     std::sort(ordered.begin(), ordered.end(), [](const auto& a, const auto& b) {
@@ -691,9 +780,9 @@ ApiResponse queryHandStats(
 ApiResponse querySpeed(sqlite3* database, std::string_view date, int bucketMinutes) {
     const int bucket = bucketMinutes > 0 ? bucketMinutes : 1;
     sqlite3_stmt* stmt = nullptr;
-    // minute-of-day = hour*60 + 分钟分量；整点偏移时区下分钟分量与本地一致，避免依赖运行时区。
+    // date/hour 按事件发生时的本地时间写入，分钟也必须按本地时间提取。
     const char* sql =
-        "SELECT ((hour * 60 + CAST(strftime('%M', timestamp, 'unixepoch') AS INTEGER)) / ?) * ? AS bucket, "
+        "SELECT ((hour * 60 + CAST(strftime('%M', timestamp, 'unixepoch', 'localtime') AS INTEGER)) / ?) * ? AS bucket, "
         "COUNT(*) AS count FROM keys WHERE date = ? GROUP BY bucket ORDER BY bucket";
 
     if (!prepare(database, sql, &stmt)) {
@@ -707,7 +796,8 @@ ApiResponse querySpeed(sqlite3* database, std::string_view date, int bucketMinut
 
     std::string body = "[";
     bool first = true;
-    while (sqlite3_step(stmt) == SQLITE_ROW) {
+    int stepResult = SQLITE_OK;
+    while ((stepResult = sqlite3_step(stmt)) == SQLITE_ROW) {
         if (!first) {
             body.push_back(',');
         }
@@ -719,6 +809,9 @@ ApiResponse querySpeed(sqlite3* database, std::string_view date, int bucketMinut
     body.push_back(']');
 
     sqlite3_finalize(stmt);
+    if (stepResult != SQLITE_DONE) {
+        return jsonError(database);
+    }
     return jsonOk(std::move(body));
 }
 

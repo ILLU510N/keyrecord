@@ -13,12 +13,15 @@
 #include <mutex>
 #include <string>
 #include <thread>
+#include <utility>
 #include <vector>
 
 namespace {
 
 constexpr size_t BATCH_SIZE = 100;
 constexpr auto FLUSH_INTERVAL = std::chrono::seconds(1);
+constexpr int MAX_WRITE_ATTEMPTS = 3;
+constexpr auto WRITE_RETRY_DELAY = std::chrono::milliseconds(100);
 
 struct KeyEvent {
     keyrecord::KeyCode vkCode;
@@ -34,6 +37,8 @@ std::condition_variable queueCv;
 std::deque<KeyEvent> keyQueue;
 std::thread writerThread;
 bool writerStopRequested = false;
+keyrecord::WriterState writerState = keyrecord::WriterState::Stopped;
+keyrecord::WriterFailureCallback writerFailureCallback;
 
 void logError(const std::string& message) {
     keyrecord::debugLog("KeyRecord: " + message + "\n");
@@ -96,6 +101,9 @@ bool initDB(const std::string& dbPath) {
                  "hour INTEGER NOT NULL,"
                  "count INTEGER NOT NULL DEFAULT 0,"
                  "PRIMARY KEY(date, hour));") ||
+        !execSQL("CREATE TABLE IF NOT EXISTS keyrecord_meta("
+                 "name TEXT PRIMARY KEY,"
+                 "value TEXT NOT NULL);") ||
         !execSQL("CREATE INDEX IF NOT EXISTS idx_keys_date ON keys(date);") ||
         !execSQL("CREATE INDEX IF NOT EXISTS idx_keys_date_vk_name ON keys(date, vk_code, key_name);") ||
         !execSQL("CREATE INDEX IF NOT EXISTS idx_keys_key_name_vk_code ON keys(key_name, vk_code);")) {
@@ -180,7 +188,24 @@ bool bindText(sqlite3_stmt* stmt, int index, const std::string& value) {
 }
 
 bool backfillSummaryTables() {
-    // 只补齐缺失汇总行，避免未来明细归档后覆盖长期保留的汇总结果。
+    sqlite3_stmt* markerStatement = nullptr;
+    const char* markerSql =
+        "SELECT 1 FROM keyrecord_meta WHERE name = 'summary_backfill_v1' LIMIT 1";
+    if (sqlite3_prepare_v2(db, markerSql, -1, &markerStatement, nullptr) != SQLITE_OK) {
+        logError("prepare summary backfill marker query failed: " + std::string(sqlite3_errmsg(db)));
+        return false;
+    }
+    const int markerResult = sqlite3_step(markerStatement);
+    sqlite3_finalize(markerStatement);
+    if (markerResult == SQLITE_ROW) {
+        return true;
+    }
+    if (markerResult != SQLITE_DONE) {
+        logError("query summary backfill marker failed: " + std::string(sqlite3_errmsg(db)));
+        return false;
+    }
+
+    // 首次升级时只补齐缺失汇总行，完成后写入版本标记，避免每次启动全表聚合。
     return execSQL("INSERT OR IGNORE INTO daily_key_stats(date,vk_code,key_name,count) "
                    "SELECT date,vk_code,key_name,COUNT(*) FROM keys "
                    "WHERE date IS NOT NULL AND vk_code IS NOT NULL AND key_name IS NOT NULL "
@@ -188,7 +213,9 @@ bool backfillSummaryTables() {
            execSQL("INSERT OR IGNORE INTO daily_hour_stats(date,hour,count) "
                    "SELECT date,hour,COUNT(*) FROM keys "
                    "WHERE date IS NOT NULL AND hour IS NOT NULL "
-                   "GROUP BY date,hour;");
+                   "GROUP BY date,hour;") &&
+           execSQL("INSERT INTO keyrecord_meta(name,value) VALUES('summary_backfill_v1','complete') "
+                   "ON CONFLICT(name) DO UPDATE SET value = excluded.value;");
 }
 
 bool resetStatement(sqlite3_stmt* stmt, const char* label) {
@@ -244,12 +271,15 @@ bool insertEvent(const KeyEvent& event) {
     auto epoch = event.eventTime.time_since_epoch();
     auto ts = std::chrono::duration_cast<std::chrono::seconds>(epoch).count();
     auto t = std::chrono::system_clock::to_time_t(event.eventTime);
-    std::tm local;
-    keyrecord::localTime(local, t);
+    std::tm local = {};
+    if (!keyrecord::localTime(local, t)) {
+        logError("Failed to convert event time to local time");
+        return false;
+    }
 
     char date[32];
     std::snprintf(date, sizeof(date), "%04d-%02d-%02d", local.tm_year + 1900, local.tm_mon + 1, local.tm_mday);
-    std::string keyName = getKeyName(event.vkCode);
+    std::string keyName = keyrecord::getKeyName(event.vkCode);
 
     int rc = sqlite3_reset(insertStmt);
     if (rc != SQLITE_OK) {
@@ -309,6 +339,23 @@ bool writeBatch(const std::vector<KeyEvent>& batch) {
     return true;
 }
 
+bool writeBatchWithRetry(const std::vector<KeyEvent>& batch) {
+    for (int attempt = 1; attempt <= MAX_WRITE_ATTEMPTS; ++attempt) {
+        if (writeBatch(batch)) {
+            return true;
+        }
+
+        const int errorCode = db ? sqlite3_extended_errcode(db) : SQLITE_ERROR;
+        if ((errorCode & 0xFF) != SQLITE_BUSY && (errorCode & 0xFF) != SQLITE_LOCKED) {
+            return false;
+        }
+        if (attempt < MAX_WRITE_ATTEMPTS) {
+            std::this_thread::sleep_for(WRITE_RETRY_DELAY * attempt);
+        }
+    }
+    return false;
+}
+
 void writerLoop() {
     while (true) {
         std::vector<KeyEvent> batch;
@@ -339,28 +386,56 @@ void writerLoop() {
             }
         }
 
-        writeBatch(batch);
+        if (!writeBatchWithRetry(batch)) {
+            keyrecord::WriterFailureCallback failureCallback;
+            {
+                std::lock_guard<std::mutex> lock(queueMutex);
+                // 保留未写入批次，允许同一进程修复数据库问题后重新启动 writer 重试。
+                for (auto it = batch.rbegin(); it != batch.rend(); ++it) {
+                    keyQueue.push_front(*it);
+                }
+                writerState = keyrecord::WriterState::Failed;
+                writerStopRequested = true;
+                failureCallback = writerFailureCallback;
+            }
+            logError("Writer entered failed state; capture must stop");
+            if (failureCallback) {
+                failureCallback();
+            }
+            break;
+        }
     }
 }
 
 } // namespace
 
-bool startWriter(const std::string& dbPath) {
+namespace keyrecord {
+
+bool startWriter(const std::string& dbPath, WriterFailureCallback failureCallback) {
     std::lock_guard<std::mutex> lock(queueMutex);
     if (writerThread.joinable()) {
-        return true;
+        return writerState == WriterState::Running;
     }
 
     writerStopRequested = false;
+    writerFailureCallback = std::move(failureCallback);
     if (!initDB(dbPath)) {
         closeDB();
+        writerFailureCallback = {};
+        if (writerState != WriterState::Failed) {
+            writerState = WriterState::Stopped;
+        }
         return false;
     }
 
+    // queueMutex 仍由当前线程持有，新线程在进入循环前无法观察到中间状态。
+    writerState = WriterState::Running;
     try {
         writerThread = std::thread(writerLoop);
     } catch (const std::exception& ex) {
         logError("Failed to start writer thread: " + std::string(ex.what()));
+        writerState = WriterState::Stopped;
+        writerFailureCallback = {};
         closeDB();
         return false;
     }
@@ -368,16 +443,17 @@ bool startWriter(const std::string& dbPath) {
     return true;
 }
 
-void enqueueKeyEvent(keyrecord::KeyCode vkCode, std::chrono::system_clock::time_point eventTime) {
+bool enqueueKeyEvent(KeyCode vkCode, std::chrono::system_clock::time_point eventTime) {
     {
         std::lock_guard<std::mutex> lock(queueMutex);
-        if (writerStopRequested) {
-            logError("Writer thread is stopping; dropping key event");
-            return;
+        if (writerState != WriterState::Running || writerStopRequested) {
+            logError("Writer is not running; rejecting key event");
+            return false;
         }
         keyQueue.push_back({vkCode, eventTime});
     }
     queueCv.notify_one();
+    return true;
 }
 
 void stopWriter() {
@@ -392,4 +468,17 @@ void stopWriter() {
     }
 
     closeDB();
+
+    std::lock_guard<std::mutex> lock(queueMutex);
+    if (writerState == WriterState::Running) {
+        writerState = WriterState::Stopped;
+    }
+    writerFailureCallback = {};
 }
+
+WriterState getWriterState() {
+    std::lock_guard<std::mutex> lock(queueMutex);
+    return writerState;
+}
+
+} // namespace keyrecord

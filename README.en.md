@@ -111,7 +111,7 @@ Start the visualization service:
 ./build/Release/keyrecord_server
 ```
 
-The default listen address is `http://0.0.0.0:3000/`. Its web assets are embedded in the executable, so changes under `visualize/public/` require a rebuild.
+The default listen address is `http://127.0.0.1:3000/`, so keyboard statistics are not exposed to the local network. Remote access must be explicitly configured with an appropriate trusted network boundary. Web assets are embedded in the executable, so changes under `visualize/public/` require a rebuild.
 
 The Linux capture process needs read access to `/dev/input/event*`. A common setup is to add the running user to the `input` group and sign in again:
 
@@ -134,7 +134,7 @@ Both executables read `~/.config/keyrecord/config.ini` (`~` maps to `%USERPROFIL
 
 ```ini
 [server]
-# Default: 0.0.0.0. Use 127.0.0.1 for local-only access.
+# Default: 127.0.0.1. Remote access must be explicitly configured.
 address = 127.0.0.1
 # Default: 3000. Valid range: 1..65535.
 port = 3000

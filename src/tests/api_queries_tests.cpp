@@ -26,6 +26,10 @@ bool execSql(sqlite3* database, const char* sql) {
     return true;
 }
 
+int interruptQuery(void*) {
+    return 1;
+}
+
 bool seedDatabase(sqlite3* database) {
     return execSql(database,
                    "CREATE TABLE keys("
@@ -183,16 +187,24 @@ int main() {
                  "INSERT INTO keys(timestamp,date,hour,vk_code,key_name) VALUES"
                  "(1767484800,'2026-01-04',9,162,'Ctrl'),"
                  "(1767484800,'2026-01-04',9,67,'C'),"
-                 "(1767484801,'2026-01-04',9,162,'Ctrl'),"
-                 "(1767484801,'2026-01-04',9,67,'C'),"
-                 "(1767484802,'2026-01-04',9,162,'Ctrl'),"
-                 "(1767484802,'2026-01-04',9,86,'V');") &&
+                 "(1767484801,'2026-01-04',9,86,'V'),"
+                 "(1767484802,'2026-01-04',9,88,'X'),"
+                 "(1767484803,'2026-01-04',9,162,'Ctrl'),"
+                 "(1767484803,'2026-01-04',9,67,'C');") &&
          ok;
 
     const auto combos = keyrecord::queryCombos(database, "2026-01-04", std::nullopt, std::nullopt, 20);
     ok = expectEqual(combos.body,
                      "[{\"combo\":\"Ctrl+C\",\"count\":2},{\"combo\":\"Ctrl+V\",\"count\":1}]",
                      "/api/combos JSON mismatch") &&
+          ok;
+
+    sqlite3_progress_handler(database, 1, interruptQuery, nullptr);
+    const auto interrupted = keyrecord::queryDailyStats(database);
+    sqlite3_progress_handler(database, 0, nullptr, nullptr);
+    ok = expectEqual(interrupted.body,
+                     "{\"error\":\"database query failed\"}",
+                     "Interrupted query must not return partial success JSON") &&
          ok;
 
     sqlite3_close(database);
