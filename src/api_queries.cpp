@@ -678,13 +678,20 @@ ApiResponse queryCombos(
             continue;
         }
 
-        if (haveModifier && ts - modifierTs <= 1) {
-            std::string combo(modifierName);
-            combo.push_back('+');
-            combo += columnText(stmt, 2);
-            ++comboCounts[combo];
+        if (!haveModifier) {
+            continue;
         }
-        haveModifier = false;
+
+        const std::int64_t elapsed = ts - modifierTs;
+        if (elapsed < 0 || elapsed > 1) {
+            haveModifier = false;
+            continue;
+        }
+
+        std::string combo(modifierName);
+        combo.push_back('+');
+        combo += columnText(stmt, 2);
+        ++comboCounts[combo];
     }
     sqlite3_finalize(stmt);
     if (stepResult != SQLITE_DONE) {
