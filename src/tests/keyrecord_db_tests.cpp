@@ -177,6 +177,8 @@ bool createLegacyKeysOnlyDatabase(const std::filesystem::path& dbPath) {
 
 bool writerFailurePreservesBatch(const std::filesystem::path& dbPath) {
     std::filesystem::remove(dbPath);
+    std::filesystem::remove(dbPath.string() + "-wal");
+    std::filesystem::remove(dbPath.string() + "-shm");
     std::mutex failureMutex;
     std::condition_variable failureCv;
     bool failureObserved = false;
@@ -189,11 +191,16 @@ bool writerFailurePreservesBatch(const std::filesystem::path& dbPath) {
         return false;
     }
 
-    sqlite3* blocker = nullptr;
-    if (sqlite3_open(dbPath.string().c_str(), &blocker) != SQLITE_OK ||
-        sqlite3_exec(blocker, "BEGIN EXCLUSIVE;", nullptr, nullptr, nullptr) != SQLITE_OK) {
-        if (blocker) {
-            sqlite3_close(blocker);
+    sqlite3* failureControl = nullptr;
+    if (sqlite3_open(dbPath.string().c_str(), &failureControl) != SQLITE_OK ||
+        sqlite3_exec(failureControl,
+                     "CREATE TRIGGER fail_key_insert BEFORE INSERT ON keys "
+                     "BEGIN SELECT RAISE(FAIL, 'forced write failure'); END;",
+                     nullptr,
+                     nullptr,
+                     nullptr) != SQLITE_OK) {
+        if (failureControl) {
+            sqlite3_close(failureControl);
         }
         keyrecord::stopWriter();
         return false;
@@ -203,14 +210,16 @@ bool writerFailurePreservesBatch(const std::filesystem::path& dbPath) {
     const bool accepted = keyrecord::enqueueKeyEvent(keyrecord::vk::Oem7, eventTime);
     {
         std::unique_lock<std::mutex> lock(failureMutex);
-        failureCv.wait_for(lock, std::chrono::seconds(12), [&] { return failureObserved; });
+        failureCv.wait_for(lock, std::chrono::seconds(5), [&] { return failureObserved; });
     }
 
-    sqlite3_exec(blocker, "ROLLBACK;", nullptr, nullptr, nullptr);
-    sqlite3_close(blocker);
     keyrecord::stopWriter();
+    const bool failureRemoved =
+        sqlite3_exec(failureControl, "DROP TRIGGER fail_key_insert;", nullptr, nullptr, nullptr) == SQLITE_OK;
+    sqlite3_close(failureControl);
 
-    if (!accepted || !failureObserved || keyrecord::getWriterState() != keyrecord::WriterState::Failed) {
+    if (!accepted || !failureObserved || !failureRemoved ||
+        keyrecord::getWriterState() != keyrecord::WriterState::Failed) {
         return false;
     }
 
