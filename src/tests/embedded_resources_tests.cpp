@@ -137,6 +137,9 @@ int main() {
     }
 
     ok = expect(!keyrecord::findEmbeddedResource("/../server.js").has_value(), "Path traversal request should not resolve a resource") && ok;
+    ok = expect(keyrecord::normalizeResourcePath("/js/./main.js") == "/js/main.js", "Dot path segments should normalize") && ok;
+    ok = expect(keyrecord::normalizeResourcePath("//js//main.js") == "/js/main.js", "Duplicate separators should normalize") && ok;
+    ok = expect(keyrecord::normalizeResourcePath("/asset..name.js") == "/asset..name.js", "Double dots inside a filename should be allowed") && ok;
     ok = expect(keyrecord::contentTypeForPath("/asset.unknown") == "application/octet-stream", "Unknown extension MIME type mismatch") && ok;
 
     return ok ? 0 : 1;

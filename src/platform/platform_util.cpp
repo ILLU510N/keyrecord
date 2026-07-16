@@ -11,11 +11,11 @@
 
 namespace keyrecord {
 
-void localTime(std::tm& out, std::time_t value) {
+bool localTime(std::tm& out, std::time_t value) {
 #ifdef _WIN32
-    localtime_s(&out, &value);
+    return localtime_s(&out, &value) == 0;
 #else
-    localtime_r(&value, &out);
+    return localtime_r(&value, &out) != nullptr;
 #endif
 }
 

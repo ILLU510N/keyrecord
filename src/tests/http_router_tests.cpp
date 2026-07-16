@@ -102,14 +102,17 @@ int main() {
     ok = expect(index.status == 200, "index status code should be 200") && ok;
     ok = expect(index.contentType == "text/html; charset=utf-8", "index Content-Type incorrect") && ok;
     ok = expect(index.body.find("KeyRecord") != std::string::npos, "index body missing KeyRecord") && ok;
-    ok = expect(hasHeader(index, "Access-Control-Allow-Origin", "*"), "index response missing CORS header") && ok;
+    ok = expect(!hasHeader(index, "Access-Control-Allow-Origin", "*"), "index response must not allow arbitrary cross-origin reads") && ok;
 
     const auto heatmap = keyrecord::handleHttpRequest("GET", "/api/heatmap?start=2026-01-02&end=2026-01-02", database);
     ok = expectEqual(heatmap.body,
                      "[{\"vk_code\":66,\"key_name\":\"B\",\"count\":1,\"x\":435,\"y\":285}]",
                      "heatmap route did not parse start/end query correctly") &&
          ok;
-    ok = expect(hasHeader(heatmap, "Access-Control-Allow-Origin", "*"), "API response missing CORS header") && ok;
+    ok = expect(!hasHeader(heatmap, "Access-Control-Allow-Origin", "*"), "API response must not allow arbitrary cross-origin reads") && ok;
+
+    const auto malformedLimit = keyrecord::handleHttpRequest("GET", "/api/keys?limit=1junk", database);
+    ok = expect(countOccurrences(malformedLimit.body, "\"key_name\"") == 20, "Malformed limit should fall back to the default") && ok;
 
     const auto keys = keyrecord::handleHttpRequest("GET", "/api/keys?limit=1", database);
     ok = expectEqual(keys.body,
@@ -206,8 +209,8 @@ int main() {
     const auto options = keyrecord::handleHttpRequest("OPTIONS", "/api/info", database);
     ok = expect(options.status == 204, "OPTIONS preflight status code should be 204") && ok;
     ok = expect(options.body.empty(), "OPTIONS preflight response body should be empty") && ok;
-    ok = expect(hasHeader(options, "Access-Control-Allow-Origin", "*"), "OPTIONS response missing CORS Origin header") && ok;
-    ok = expect(hasHeader(options, "Access-Control-Allow-Methods", "GET, OPTIONS"), "OPTIONS response missing allowed methods header") && ok;
+    ok = expect(!hasHeader(options, "Access-Control-Allow-Origin", "*"), "OPTIONS response must not allow arbitrary origins") && ok;
+    ok = expect(hasHeader(options, "Allow", "GET, OPTIONS"), "OPTIONS response missing Allow header") && ok;
 
     sqlite3_close(database);
     std::filesystem::remove(dbPath);

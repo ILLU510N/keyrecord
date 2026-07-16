@@ -149,7 +149,7 @@ int parseBoundedInt(const ParsedTarget& target, const std::string& name, int def
 
     int parsed = defaultValue;
     const auto result = std::from_chars(value->data(), value->data() + value->size(), parsed);
-    if (result.ec != std::errc() || parsed <= 0) {
+    if (result.ec != std::errc() || result.ptr != value->data() + value->size() || parsed <= 0) {
         return defaultValue;
     }
     return parsed > maxValue ? maxValue : parsed;
@@ -164,10 +164,7 @@ HttpResponse fromApiResponse(ApiResponse response) {
         response.status,
         std::move(response.contentType),
         std::move(response.body),
-        {
-            {"Access-Control-Allow-Origin", "*"},
-            {"Access-Control-Allow-Headers", "Content-Type"},
-        },
+        {},
     };
 }
 
@@ -176,10 +173,7 @@ HttpResponse jsonResponse(int status, std::string body) {
         status,
         "application/json; charset=utf-8",
         std::move(body),
-        {
-            {"Access-Control-Allow-Origin", "*"},
-            {"Access-Control-Allow-Headers", "Content-Type"},
-        },
+        {},
     };
 }
 
@@ -238,16 +232,12 @@ HttpResponse methodNotAllowed() {
     return response;
 }
 
-HttpResponse corsPreflight() {
+HttpResponse optionsResponse() {
     return HttpResponse{
         204,
         "application/json; charset=utf-8",
         "",
-        {
-            {"Access-Control-Allow-Origin", "*"},
-            {"Access-Control-Allow-Headers", "Content-Type"},
-            {"Access-Control-Allow-Methods", "GET, OPTIONS"},
-        },
+        {{"Allow", "GET, OPTIONS"}},
     };
 }
 
@@ -256,10 +246,7 @@ HttpResponse staticResponse(const EmbeddedResource& resource) {
         200,
         std::string(resource.contentType),
         std::string(reinterpret_cast<const char*>(resource.data.data()), resource.data.size()),
-        {
-            {"Access-Control-Allow-Origin", "*"},
-            {"Access-Control-Allow-Headers", "Content-Type"},
-        },
+        {},
     };
 }
 
@@ -267,7 +254,7 @@ HttpResponse staticResponse(const EmbeddedResource& resource) {
 
 HttpResponse handleHttpRequest(std::string_view method, std::string_view target, sqlite3* database) {
     if (method == "OPTIONS") {
-        return corsPreflight();
+        return optionsResponse();
     }
 
     if (method != "GET") {

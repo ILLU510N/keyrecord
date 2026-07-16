@@ -105,7 +105,7 @@ int main() {
             ok = expect(index.status == 200, "Visualization service index should return status 200") && ok;
             ok = expect(index.contentType == "text/html; charset=utf-8", "Visualization service index Content-Type mismatch") && ok;
             ok = expect(index.body.find("KeyRecord") != std::string::npos, "Visualization service index should contain KeyRecord") && ok;
-            ok = expect(hasHeader(index, "Access-Control-Allow-Origin", "*"), "Visualization service index should include the CORS header") && ok;
+            ok = expect(!hasHeader(index, "Access-Control-Allow-Origin", "*"), "Visualization service index must not allow arbitrary origins") && ok;
 
             const auto info = service->handleRequest("GET", "/api/info");
             ok = expectEqual(
@@ -113,7 +113,7 @@ int main() {
                      "{\"total_keys\":2,\"first_date\":\"2026-01-01\",\"last_date\":\"2026-01-02\",\"unique_keys\":2}",
                      "Visualization service /api/info JSON mismatch") &&
                  ok;
-            ok = expect(hasHeader(info, "Access-Control-Allow-Origin", "*"), "Visualization service API should include the CORS header") && ok;
+            ok = expect(!hasHeader(info, "Access-Control-Allow-Origin", "*"), "Visualization service API must not allow arbitrary origins") && ok;
 
             ok = expect(insertAdditionalKey(dbPath), "Failed to insert additional cache test key") && ok;
             const auto cachedInfo = service->handleRequest("GET", "/api/info");
@@ -121,7 +121,12 @@ int main() {
                      cachedInfo.body,
                      info.body,
                      "API cache should return the first body inside TTL") &&
-                 ok;
+                  ok;
+
+            for (int i = 0; i < 200; ++i) {
+                service->handleRequest("GET", "/api/info?nonce=" + std::to_string(i));
+            }
+            ok = expect(service->cachedResponseCount() <= 128, "API cache must enforce its capacity limit") && ok;
 
             const auto staticAgain = service->handleRequest("GET", "/");
             ok = expect(staticAgain.status == 200, "Visualization service index should still return status 200") && ok;

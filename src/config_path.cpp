@@ -26,7 +26,16 @@ std::filesystem::path getHomeDir() {
 
 std::string getConfigDir() {
     const auto configPath = getHomeDir() / ".config" / "keyrecord";
-    std::filesystem::create_directories(configPath);
+    std::error_code error;
+    std::filesystem::create_directories(configPath, error);
+    std::error_code statError;
+    const bool isDirectory = std::filesystem::is_directory(configPath, statError);
+    if (error || statError || !isDirectory) {
+        throw std::runtime_error(
+            "Failed to create config directory '" + configPath.string() +
+            "': " + (error ? error.message() :
+                      statError ? statError.message() : "path is not a directory"));
+    }
     return configPath.string();
 }
 

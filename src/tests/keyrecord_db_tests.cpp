@@ -3,7 +3,9 @@
 #include "../platform/virtual_keys.h"
 
 #include <filesystem>
+#include <condition_variable>
 #include <iostream>
+#include <mutex>
 #include <sqlite3.h>
 
 namespace {
@@ -32,6 +34,25 @@ bool hasTable(sqlite3* database, const char* tableName) {
     const int rc = sqlite3_step(stmt);
     sqlite3_finalize(stmt);
     return rc == SQLITE_ROW;
+}
+
+bool hasMetaValue(sqlite3* database, const char* name, const char* value) {
+    sqlite3_stmt* stmt = nullptr;
+    if (sqlite3_prepare_v2(database,
+                           "SELECT value FROM keyrecord_meta WHERE name = ?",
+                           -1,
+                           &stmt,
+                           nullptr) != SQLITE_OK) {
+        return false;
+    }
+    sqlite3_bind_text(stmt, 1, name, -1, SQLITE_TRANSIENT);
+    const unsigned char* actual = nullptr;
+    if (sqlite3_step(stmt) == SQLITE_ROW) {
+        actual = sqlite3_column_text(stmt, 0);
+    }
+    const bool ok = actual && std::string(reinterpret_cast<const char*>(actual)) == value;
+    sqlite3_finalize(stmt);
+    return ok;
 }
 
 bool singleQuoteKeyWasInserted(sqlite3* database) {
@@ -154,6 +175,62 @@ bool createLegacyKeysOnlyDatabase(const std::filesystem::path& dbPath) {
     return ok;
 }
 
+bool writerFailurePreservesBatch(const std::filesystem::path& dbPath) {
+    std::filesystem::remove(dbPath);
+    std::mutex failureMutex;
+    std::condition_variable failureCv;
+    bool failureObserved = false;
+
+    if (!keyrecord::startWriter(dbPath.string(), [&] {
+            std::lock_guard<std::mutex> lock(failureMutex);
+            failureObserved = true;
+            failureCv.notify_one();
+        })) {
+        return false;
+    }
+
+    sqlite3* blocker = nullptr;
+    if (sqlite3_open(dbPath.string().c_str(), &blocker) != SQLITE_OK ||
+        sqlite3_exec(blocker, "BEGIN EXCLUSIVE;", nullptr, nullptr, nullptr) != SQLITE_OK) {
+        if (blocker) {
+            sqlite3_close(blocker);
+        }
+        keyrecord::stopWriter();
+        return false;
+    }
+
+    const auto eventTime = std::chrono::system_clock::from_time_t(1767139200);
+    const bool accepted = keyrecord::enqueueKeyEvent(keyrecord::vk::Oem7, eventTime);
+    {
+        std::unique_lock<std::mutex> lock(failureMutex);
+        failureCv.wait_for(lock, std::chrono::seconds(12), [&] { return failureObserved; });
+    }
+
+    sqlite3_exec(blocker, "ROLLBACK;", nullptr, nullptr, nullptr);
+    sqlite3_close(blocker);
+    keyrecord::stopWriter();
+
+    if (!accepted || !failureObserved || keyrecord::getWriterState() != keyrecord::WriterState::Failed) {
+        return false;
+    }
+
+    if (!keyrecord::startWriter(dbPath.string())) {
+        return false;
+    }
+    keyrecord::stopWriter();
+
+    sqlite3* database = nullptr;
+    if (sqlite3_open(dbPath.string().c_str(), &database) != SQLITE_OK) {
+        return false;
+    }
+    const bool inserted = singleQuoteKeyWasInserted(database);
+    sqlite3_close(database);
+    std::filesystem::remove(dbPath);
+    std::filesystem::remove(dbPath.string() + "-wal");
+    std::filesystem::remove(dbPath.string() + "-shm");
+    return inserted;
+}
+
 } // namespace
 
 int main() {
@@ -167,15 +244,16 @@ int main() {
         return 1;
     }
 
-    initKeyMap();
-    if (!startWriter(dbPath.string())) {
+    if (!keyrecord::startWriter(dbPath.string())) {
         std::cerr << "Failed to start writer\n";
         return 1;
     }
 
     const auto eventTime = std::chrono::system_clock::from_time_t(1767139200);
-    enqueueKeyEvent(keyrecord::vk::Oem7, eventTime);
-    stopWriter();
+    keyrecord::enqueueKeyEvent(keyrecord::vk::Oem7, eventTime);
+    keyrecord::stopWriter();
+    bool ok = keyrecord::getWriterState() == keyrecord::WriterState::Stopped;
+    ok = !keyrecord::enqueueKeyEvent(keyrecord::vk::Oem7, eventTime) && ok;
 
     sqlite3* database = nullptr;
     if (sqlite3_open(dbPath.string().c_str(), &database) != SQLITE_OK) {
@@ -183,13 +261,14 @@ int main() {
         return 1;
     }
 
-    bool ok = true;
     ok = ok && journalModeIsWal(database);
     ok = ok && hasIndex(database, "idx_keys_date");
     ok = ok && hasIndex(database, "idx_keys_date_vk_name");
     ok = ok && hasIndex(database, "idx_keys_key_name_vk_code");
     ok = ok && hasTable(database, "daily_key_stats");
     ok = ok && hasTable(database, "daily_hour_stats");
+    ok = ok && hasTable(database, "keyrecord_meta");
+    ok = ok && hasMetaValue(database, "summary_backfill_v1", "complete");
     ok = ok && singleQuoteKeyWasInserted(database);
     ok = ok && legacySummaryWasBackfilled(database);
     ok = ok && summaryMatchesInsertedSingleQuote(database);
@@ -198,6 +277,9 @@ int main() {
     std::filesystem::remove(dbPath);
     std::filesystem::remove(dbPath.string() + "-wal");
     std::filesystem::remove(dbPath.string() + "-shm");
+
+    const auto failureDbPath = std::filesystem::temp_directory_path() / "keyrecord_writer_failure_test.db";
+    ok = writerFailurePreservesBatch(failureDbPath) && ok;
 
     if (!ok) {
         return 1;

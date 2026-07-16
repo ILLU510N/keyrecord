@@ -25,8 +25,12 @@ int main() {
     const auto response = keyrecord::toBeastResponse(source, 11, true);
 
     bool ok = true;
-    ok = expect(!response.keep_alive(), "Single-threaded server responses must disable keep-alive to avoid blocking later static asset requests") && ok;
-    ok = expect(response.need_eof(), "Response should require EOF after keep-alive is disabled") && ok;
+    ok = expect(response.keep_alive(), "Concurrent server responses should preserve requested keep-alive") && ok;
+    ok = expect(!response.need_eof(), "Keep-alive response should not require EOF") && ok;
+
+    const auto closeResponse = keyrecord::toBeastResponse(source, 11, false);
+    ok = expect(!closeResponse.keep_alive(), "Connection-close request should disable keep-alive") && ok;
+    ok = expect(closeResponse.need_eof(), "Connection-close response should require EOF") && ok;
 
     return ok ? 0 : 1;
 }

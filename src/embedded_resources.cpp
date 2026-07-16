@@ -16,10 +16,6 @@ std::string_view extensionOf(std::string_view path) {
     return path.substr(dot);
 }
 
-bool containsPathTraversal(std::string_view path) {
-    return path.find("..") != std::string_view::npos || path.find('\\') != std::string_view::npos;
-}
-
 } // namespace
 
 std::string normalizeResourcePath(std::string_view requestPath) {
@@ -32,16 +28,31 @@ std::string normalizeResourcePath(std::string_view requestPath) {
         return "/index.html";
     }
 
-    if (containsPathTraversal(requestPath)) {
+    if (requestPath.find('\\') != std::string_view::npos) {
         return {};
     }
 
     std::string normalized;
-    if (requestPath.front() != '/') {
-        normalized.push_back('/');
+    normalized.push_back('/');
+    std::size_t offset = requestPath.front() == '/' ? 1 : 0;
+    while (offset <= requestPath.size()) {
+        const auto slash = requestPath.find('/', offset);
+        const auto segment = requestPath.substr(offset, slash - offset);
+        if (segment == "..") {
+            return {};
+        }
+        if (!segment.empty() && segment != ".") {
+            if (normalized.size() > 1) {
+                normalized.push_back('/');
+            }
+            normalized.append(segment);
+        }
+        if (slash == std::string_view::npos) {
+            break;
+        }
+        offset = slash + 1;
     }
-    normalized.append(requestPath.data(), requestPath.size());
-    return normalized;
+    return normalized == "/" ? "/index.html" : normalized;
 }
 
 std::string_view contentTypeForPath(std::string_view path) {

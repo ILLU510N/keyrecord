@@ -162,7 +162,13 @@ add_custom_command(
     VERBATIM
 )
 
-add_library(keyrecord_visualization_core STATIC src/keyboard_layout.cpp src/key_classification.cpp src/api_queries.cpp src/readonly_database.cpp)
+add_library(keyrecord_visualization_core STATIC
+    src/keyboard_layout.cpp
+    src/key_classification.cpp
+    src/api_queries.cpp
+    src/readonly_database.cpp
+    src/sqlite_statement.cpp
+)
 target_include_directories(keyrecord_visualization_core PUBLIC ${KEYRECORD_SRC_DIR})
 target_link_libraries(keyrecord_visualization_core PUBLIC ${KEYRECORD_SQLITE_TARGET})
 
@@ -200,6 +206,9 @@ if(KEYRECORD_HAS_SERVER_SUPPORT)
         ${KEYRECORD_SRC_DIR}
         ${KEYRECORD_BOOST_INCLUDE_DIR}
     )
+    if(WIN32)
+        target_compile_definitions(keyrecord_server PRIVATE _WIN32_WINNT=0x0601)
+    endif()
     target_link_libraries(keyrecord_server PRIVATE keyrecord_visualization_service Threads::Threads)
     if(WIN32)
         # Windows 下 Boost.Asio 需要显式链接 Winsock。
@@ -333,6 +342,9 @@ add_keyrecord_test(server_startup_tests SOURCES src/tests/server_startup_tests.c
 
 if(KEYRECORD_HAS_SERVER_SUPPORT)
     add_keyrecord_test(server_response_adapter_tests SOURCES src/tests/server_response_adapter_tests.cpp src/server_response_adapter.cpp INCLUDES ${KEYRECORD_SRC_DIR} ${KEYRECORD_BOOST_INCLUDE_DIR})
+    if(WIN32)
+        target_compile_definitions(server_response_adapter_tests PRIVATE _WIN32_WINNT=0x0601)
+    endif()
 endif()
 
 add_keyrecord_test(readonly_database_tests SOURCES src/tests/readonly_database_tests.cpp LINKS keyrecord_visualization_core COPY_SQLITE_DLL)

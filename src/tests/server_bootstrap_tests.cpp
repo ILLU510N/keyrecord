@@ -112,7 +112,7 @@ int main() {
                      keyrecord::getDefaultDatabasePath(),
                      "Default database path should use the config directory") &&
                  ok;
-            ok = expect(config->address == "0.0.0.0", "Default listen address should be 0.0.0.0") && ok;
+            ok = expect(config->address == "127.0.0.1", "Default listen address should be loopback-only") && ok;
             ok = expect(config->port == 3000, "Default listen port should be 3000") && ok;
         }
     }
@@ -168,13 +168,13 @@ int main() {
 
     // applyConfigFileValues：部分覆盖不影响其他项。
     {
-        keyrecord::ServerConfig config;  // 默认 address=0.0.0.0, port=3000
+        keyrecord::ServerConfig config;  // 默认 address=127.0.0.1, port=3000
         config.dbPath = "keep.db";
         keyrecord::ConfigFileValues values;
         values.port = static_cast<unsigned short>(7000);
         keyrecord::applyConfigFileValues(config, values);
         ok = expect(config.port == 7000, "Partial overlay should set port") && ok;
-        ok = expect(config.address == "0.0.0.0", "Partial overlay should leave address untouched") && ok;
+        ok = expect(config.address == "127.0.0.1", "Partial overlay should leave address untouched") && ok;
         ok = expectEqual(config.dbPath, "keep.db", "Partial overlay should leave db path untouched") && ok;
     }
 

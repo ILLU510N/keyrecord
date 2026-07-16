@@ -1,5 +1,7 @@
 #include "key_classification.h"
 
+#include "platform/virtual_keys.h"
+
 namespace keyrecord {
 namespace {
 
@@ -16,12 +18,12 @@ bool isLeftHandKey(int vkCode) {
         case 'Z': case 'X': case 'C': case 'V': case 'B':
         // 数字区左手列 1-5 与反引号
         case '1': case '2': case '3': case '4': case '5':
-        case 192:
+        case vk::Oem3:
         // 左侧控制与修饰键：Esc Tab Caps 左 Shift/Ctrl/Alt
-        case 27: case 9: case 20:
-        case 160: case 162: case 164:
+        case vk::Escape: case vk::Tab: case vk::Capital:
+        case vk::LShift: case vk::LControl: case vk::LMenu:
         // F1-F6
-        case 112: case 113: case 114: case 115: case 116: case 117:
+        case vk::F1: case vk::F2: case vk::F3: case vk::F4: case vk::F5: case vk::F6:
             return true;
         default:
             return false;
@@ -38,14 +40,14 @@ bool isRightHandKey(int vkCode) {
         // 数字区右手列 6-0
         case '6': case '7': case '8': case '9': case '0':
         // 右侧符号
-        case 189: case 187: case 219: case 221: case 220:
-        case 186: case 222: case 188: case 190: case 191:
+        case vk::OemMinus: case vk::OemPlus: case vk::Oem4: case vk::Oem6: case vk::Oem5:
+        case vk::Oem1: case vk::Oem7: case vk::OemComma: case vk::OemPeriod: case vk::Oem2:
         // 退格与回车
-        case 8: case 13:
+        case vk::Back: case vk::Return:
         // 右 Shift/Ctrl/Alt
-        case 161: case 163: case 165:
+        case vk::RShift: case vk::RControl: case vk::RMenu:
         // F7-F12
-        case 118: case 119: case 120: case 121: case 122: case 123:
+        case vk::F7: case vk::F8: case vk::F9: case vk::F10: case vk::F11: case vk::F12:
             return true;
         default:
             return false;
@@ -61,34 +63,36 @@ KeyRegion getKeyRegion(int vkCode) {
     if (inRange(vkCode, '0', '9')) {
         return KeyRegion::Digits;
     }
-    if (inRange(vkCode, 96, 111)) {
+    if (inRange(vkCode, vk::Numpad0, vk::Divide)) {
         return KeyRegion::Numpad;
     }
-    if (inRange(vkCode, 112, 123)) {
+    if (inRange(vkCode, vk::F1, vk::F12)) {
         return KeyRegion::Function;
     }
     // 方向键、Home/End/PgUp/PgDn、Ins、Del
-    if (inRange(vkCode, 33, 40) || vkCode == 45 || vkCode == 46) {
+    if (inRange(vkCode, vk::Prior, vk::Down) || vkCode == vk::Insert || vkCode == vk::Delete) {
         return KeyRegion::Navigation;
     }
     // Shift/Ctrl/Alt/Win 以及 Caps/Num/Scroll 锁定键
-    if (vkCode == 16 || vkCode == 17 || vkCode == 18 || vkCode == 91 || vkCode == 92 ||
-        inRange(vkCode, 160, 165) || vkCode == 20 || vkCode == 144 || vkCode == 145) {
+    if (vkCode == vk::Shift || vkCode == vk::Control || vkCode == vk::Menu ||
+        vkCode == vk::LWin || vkCode == vk::RWin || inRange(vkCode, vk::LShift, vk::RMenu) ||
+        vkCode == vk::Capital || vkCode == vk::NumLock || vkCode == vk::Scroll) {
         return KeyRegion::Modifiers;
     }
     // 空格、回车、Tab、退格、Esc
-    if (vkCode == 8 || vkCode == 9 || vkCode == 13 || vkCode == 27 || vkCode == 32) {
+    if (vkCode == vk::Back || vkCode == vk::Tab || vkCode == vk::Return ||
+        vkCode == vk::Escape || vkCode == vk::Space) {
         return KeyRegion::Control;
     }
     // 标点符号
-    if (inRange(vkCode, 186, 192) || inRange(vkCode, 219, 222)) {
+    if (inRange(vkCode, vk::Oem1, vk::Oem3) || inRange(vkCode, vk::Oem4, vk::Oem7)) {
         return KeyRegion::Punctuation;
     }
     return KeyRegion::Other;
 }
 
 KeyHand getKeyHand(int vkCode) {
-    if (vkCode == 32) {
+    if (vkCode == vk::Space) {
         return KeyHand::Both;
     }
     if (isLeftHandKey(vkCode)) {
@@ -98,11 +102,11 @@ KeyHand getKeyHand(int vkCode) {
         return KeyHand::Right;
     }
     // 小键盘整体归右手，便于右手数字输入对比。
-    if (inRange(vkCode, 96, 111) || vkCode == 144) {
+    if (inRange(vkCode, vk::Numpad0, vk::Divide) || vkCode == vk::NumLock) {
         return KeyHand::Right;
     }
     // 导航与编辑键簇位于键盘右侧，归右手。
-    if (inRange(vkCode, 33, 40) || vkCode == 45 || vkCode == 46) {
+    if (inRange(vkCode, vk::Prior, vk::Down) || vkCode == vk::Insert || vkCode == vk::Delete) {
         return KeyHand::Right;
     }
     return KeyHand::Unknown;

@@ -26,6 +26,10 @@ bool execSql(sqlite3* database, const char* sql) {
     return true;
 }
 
+int interruptQuery(void*) {
+    return 1;
+}
+
 bool seedDatabase(sqlite3* database) {
     return execSql(database,
                    "CREATE TABLE keys("
@@ -193,6 +197,14 @@ int main() {
     ok = expectEqual(combos.body,
                      "[{\"combo\":\"Ctrl+C\",\"count\":2},{\"combo\":\"Ctrl+V\",\"count\":1}]",
                      "/api/combos JSON mismatch") &&
+          ok;
+
+    sqlite3_progress_handler(database, 1, interruptQuery, nullptr);
+    const auto interrupted = keyrecord::queryDailyStats(database);
+    sqlite3_progress_handler(database, 0, nullptr, nullptr);
+    ok = expectEqual(interrupted.body,
+                     "{\"error\":\"database query failed\"}",
+                     "Interrupted query must not return partial success JSON") &&
          ok;
 
     sqlite3_close(database);

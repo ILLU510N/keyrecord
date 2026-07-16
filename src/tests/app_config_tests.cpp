@@ -214,6 +214,14 @@ int main() {
         ok = expect(!warnings.empty(), "Line without '=' should produce a warning") && ok;
     }
 
+    {
+        std::string warnings;
+        const auto values = parseConfigText("[server]\naddress=127.0.0.1\n[storage\nport=9999\n", &warnings);
+        ok = expect(values.address.has_value(), "Valid settings before malformed section should be retained") && ok;
+        ok = expect(!values.port.has_value(), "Malformed section must clear the previous section context") && ok;
+        ok = expect(!warnings.empty(), "Malformed section should produce a warning") && ok;
+    }
+
     // 文件不存在 → 返回空值集合（非错误）。
     {
         const auto values = parseConfigFile("Z:/definitely/missing/config.ini");

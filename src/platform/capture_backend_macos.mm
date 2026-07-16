@@ -71,11 +71,13 @@ CGEventRef captureCallback(
         return event;
     }
 
-    if (type == kCGEventKeyDown && eventCallback) {
+    if ((type == kCGEventKeyDown || type == kCGEventFlagsChanged) && eventCallback) {
         auto nativeCode = static_cast<int>(
             CGEventGetIntegerValueField(event, kCGKeyboardEventKeycode));
         keyrecord::KeyCode vkCode = keyrecord::macVirtualKeyToVk(nativeCode);
-        if (vkCode != 0) {
+        const bool isKeyDown = type == kCGEventKeyDown ||
+            CGEventSourceKeyState(kCGEventSourceStateCombinedSessionState, nativeCode);
+        if (vkCode != 0 && isKeyDown) {
             (*eventCallback)(vkCode, std::chrono::system_clock::now());
         }
     }
@@ -108,7 +110,8 @@ int runCaptureLoop(const KeyEventCallback& callback) {
     }
 
     eventCallback = &callback;
-    CGEventMask eventMask = CGEventMaskBit(kCGEventKeyDown);
+    CGEventMask eventMask =
+        CGEventMaskBit(kCGEventKeyDown) | CGEventMaskBit(kCGEventFlagsChanged);
     eventTap = CGEventTapCreate(
         kCGSessionEventTap,
         kCGHeadInsertEventTap,
