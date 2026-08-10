@@ -5,7 +5,13 @@
 #include "key_names.h"
 #include "platform/capture_backend.h"
 #include "platform/platform_util.h"
+#ifdef _WIN32
+#include "platform/server_launcher.h"
+#endif
 #include "platform/tray.h"
+
+#include <string>
+#include <utility>
 
 int runKeyrecordApp() {
     // 数据库位置遵循配置文件（[storage] db_path / db_dir），未配置则用默认路径。
@@ -16,9 +22,21 @@ int runKeyrecordApp() {
         return 1;
     }
 
-    if (!keyrecord::initializeTray([] {
-            keyrecord::requestStopCapture();
-        })) {
+    keyrecord::TrayOpenVisualizationCallback openVisualizationCallback;
+#ifdef _WIN32
+    openVisualizationCallback = [] {
+        std::string errorMessage;
+        if (!keyrecord::openVisualizationPage(&errorMessage)) {
+            keyrecord::showError(errorMessage);
+        }
+    };
+#endif
+
+    if (!keyrecord::initializeTray(
+            [] {
+                keyrecord::requestStopCapture();
+            },
+            std::move(openVisualizationCallback))) {
         keyrecord::stopWriter();
         keyrecord::showError("Failed to initialize tray integration");
         return 1;
@@ -30,6 +48,9 @@ int runKeyrecordApp() {
         }
     });
     keyrecord::shutdownTray();
+#ifdef _WIN32
+    keyrecord::shutdownVisualizationServer();
+#endif
     keyrecord::stopWriter();
     return result != 0 || keyrecord::getWriterState() == keyrecord::WriterState::Failed ? 1 : 0;
 }

@@ -2,7 +2,7 @@
 
 namespace keyrecord {
 
-bool initializeTray(TrayExitCallback) {
+bool initializeTray(TrayExitCallback, TrayOpenVisualizationCallback) {
     return true;
 }
 
