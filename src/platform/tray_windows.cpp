@@ -14,11 +14,13 @@ namespace {
 
 constexpr wchar_t WINDOW_CLASS_NAME[] = L"KeyRecordClass";
 constexpr UINT WM_TRAYICON = WM_USER + 1;
-constexpr UINT ID_TRAY_EXIT = 1001;
+constexpr UINT ID_TRAY_OPEN_VISUALIZATION = 1001;
+constexpr UINT ID_TRAY_EXIT = 1002;
 
 HWND trayWindow = nullptr;
 NOTIFYICONDATAW trayIcon = {};
 keyrecord::TrayExitCallback exitCallback;
+keyrecord::TrayOpenVisualizationCallback openVisualizationCallback;
 
 HICON loadTrayIcon(HINSTANCE instance) {
     // 托盘使用小尺寸图标，优先从多尺寸 .ico 资源中取系统推荐尺寸。
@@ -40,6 +42,7 @@ LRESULT CALLBACK trayWindowProc(HWND window, UINT message, WPARAM wParam, LPARAM
                 GetCursorPos(&point);
                 HMENU menu = CreatePopupMenu();
                 if (menu) {
+                    AppendMenuW(menu, MF_STRING, ID_TRAY_OPEN_VISUALIZATION, L"Open visualization");
                     AppendMenuW(menu, MF_STRING, ID_TRAY_EXIT, L"Exit");
                     SetForegroundWindow(window);
                     TrackPopupMenu(
@@ -55,8 +58,19 @@ LRESULT CALLBACK trayWindowProc(HWND window, UINT message, WPARAM wParam, LPARAM
             }
             return 0;
         case WM_COMMAND:
-            if (LOWORD(wParam) == ID_TRAY_EXIT && exitCallback) {
-                exitCallback();
+            switch (LOWORD(wParam)) {
+                case ID_TRAY_OPEN_VISUALIZATION:
+                    if (openVisualizationCallback) {
+                        openVisualizationCallback();
+                    }
+                    break;
+                case ID_TRAY_EXIT:
+                    if (exitCallback) {
+                        exitCallback();
+                    }
+                    break;
+                default:
+                    break;
             }
             return 0;
         default:
@@ -68,7 +82,7 @@ LRESULT CALLBACK trayWindowProc(HWND window, UINT message, WPARAM wParam, LPARAM
 
 namespace keyrecord {
 
-bool initializeTray(TrayExitCallback callback) {
+bool initializeTray(TrayExitCallback exitCallbackValue, TrayOpenVisualizationCallback openVisualizationCallbackValue) {
     HINSTANCE instance = GetModuleHandleW(nullptr);
     WNDCLASSW windowClass = {};
     windowClass.lpfnWndProc = trayWindowProc;
@@ -95,7 +109,8 @@ bool initializeTray(TrayExitCallback callback) {
         return false;
     }
 
-    exitCallback = std::move(callback);
+    exitCallback = std::move(exitCallbackValue);
+    openVisualizationCallback = std::move(openVisualizationCallbackValue);
     trayIcon.cbSize = sizeof(trayIcon);
     trayIcon.hWnd = trayWindow;
     trayIcon.uID = 1;
@@ -107,6 +122,7 @@ bool initializeTray(TrayExitCallback callback) {
         DestroyWindow(trayWindow);
         trayWindow = nullptr;
         exitCallback = {};
+        openVisualizationCallback = {};
         return false;
     }
     return true;
@@ -120,6 +136,7 @@ void shutdownTray() {
     }
     trayIcon = {};
     exitCallback = {};
+    openVisualizationCallback = {};
 }
 
 } // namespace keyrecord
