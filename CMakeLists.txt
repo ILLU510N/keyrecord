@@ -142,7 +142,14 @@ function(add_keyrecord_test target_name)
     )
 endfunction()
 
-add_library(keyrecord_capture STATIC src/key_names.cpp src/key_event_writer.cpp src/config_path.cpp src/app_config.cpp src/platform/platform_util.cpp)
+add_library(keyrecord_capture STATIC
+    src/key_names.cpp
+    src/key_event_writer.cpp
+    src/config_path.cpp
+    src/app_config.cpp
+    src/visualization_url.cpp
+    src/platform/platform_util.cpp
+)
 target_include_directories(keyrecord_capture PUBLIC ${KEYRECORD_SRC_DIR})
 target_link_libraries(keyrecord_capture PUBLIC ${KEYRECORD_SQLITE_TARGET} Threads::Threads)
 
@@ -223,6 +230,7 @@ endif()
 if(WIN32)
     set(KEYRECORD_CAPTURE_PLATFORM_SOURCES
         src/platform/capture_backend_windows.cpp
+        src/platform/server_launcher_windows.cpp
         src/platform/tray_windows.cpp
     )
     set(KEYRECORD_EXECUTABLE_OPTIONS WIN32)
@@ -331,6 +339,7 @@ enable_testing()
 add_keyrecord_test(keyrecord_tests SOURCES src/tests/keyrecord_db_tests.cpp LINKS keyrecord_capture COPY_SQLITE_DLL)
 add_keyrecord_test(config_path_tests SOURCES src/tests/config_path_tests.cpp src/config_path.cpp INCLUDES ${KEYRECORD_SRC_DIR})
 add_keyrecord_test(app_config_tests SOURCES src/tests/app_config_tests.cpp src/app_config.cpp src/config_path.cpp INCLUDES ${KEYRECORD_SRC_DIR})
+add_keyrecord_test(visualization_url_tests SOURCES src/tests/visualization_url_tests.cpp LINKS keyrecord_capture COPY_SQLITE_DLL)
 add_keyrecord_test(embedded_resources_tests SOURCES src/tests/embedded_resources_tests.cpp LINKS keyrecord_resources)
 add_keyrecord_test(api_queries_tests SOURCES src/tests/api_queries_tests.cpp LINKS keyrecord_visualization_core COPY_SQLITE_DLL)
 add_keyrecord_test(keyboard_layout_tests SOURCES src/tests/keyboard_layout_tests.cpp LINKS keyrecord_visualization_core)

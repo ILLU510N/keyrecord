@@ -236,6 +236,8 @@ db_path = D:/data/keyrecord/keyrecord.db
 
 程序会自动隐藏，在系统托盘显示图标。
 
+右键托盘图标并选择“Open visualization”会启动同目录的 `keyrecord_server.exe`，随后使用默认浏览器打开展示页。由托盘启动的可视化服务会在选择“Exit”退出主程序时一并结束。
+
 ### Windows：使用启动脚本
 
 ```powershell
