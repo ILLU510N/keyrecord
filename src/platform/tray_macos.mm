@@ -32,7 +32,7 @@ KeyRecordTrayTarget* trayTarget = nil;
 
 namespace keyrecord {
 
-bool initializeTray(TrayExitCallback callback) {
+bool initializeTray(TrayExitCallback callback, TrayOpenVisualizationCallback) {
     @autoreleasepool {
         [NSApplication sharedApplication];
         [NSApp setActivationPolicy:NSApplicationActivationPolicyAccessory];
