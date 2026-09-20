@@ -79,6 +79,72 @@
       </div>
     </header>
 
+    <div id="health-care-banner" class="health-care-banner print-hide" aria-label="健康关怀与防护提示">
+      <div class="care-banner-main">
+        <div class="care-lead">
+          <span id="care-icon" class="care-icon" aria-hidden="true">🖐️</span>
+          <span id="care-category" class="care-badge">手部健康</span>
+        </div>
+        <div class="care-content">
+          <p id="care-message" class="care-message">长时间打字时请尽量保持手腕平直，避免悬空或过度向下压迫腕管神经，远离腱鞘炎。</p>
+          <span class="care-collapsed-hint" aria-hidden="true">健康关怀已折叠 · 点击展开</span>
+        </div>
+        <div class="care-actions" aria-label="关怀提示操作">
+          <button id="care-refresh" class="care-btn" type="button" title="换一条关怀提示" aria-label="换一条关怀提示">
+            <svg aria-hidden="true" viewBox="0 0 24 24"><path d="M20 4v5h-5M4 20v-5h5M6.1 9A7 7 0 0 1 18 6l2 3M17.9 15A7 7 0 0 1 6 18l-2-3"/></svg>
+            <span>换一条</span>
+          </button>
+          <button id="care-guide-toggle" class="care-btn care-btn--guide" type="button" aria-expanded="false" aria-controls="care-guide-panel" title="手部放松指南">
+            <svg aria-hidden="true" viewBox="0 0 24 24"><path d="M12 2a5 5 0 0 1 5 5v3a3 3 0 0 1 3 3v4a6 6 0 0 1-12 0v-4a3 3 0 0 1 3-3V7a5 5 0 0 1 1-3.1M10 7a2 2 0 1 1 4 0v3h-4V7z"/></svg>
+            <span>放松指南</span>
+          </button>
+          <button id="care-collapse-toggle" class="care-btn care-btn--icon" type="button" aria-expanded="true" title="收起关怀提示" aria-label="收起关怀提示">
+            <svg class="care-collapse-icon" aria-hidden="true" viewBox="0 0 24 24"><path d="m18 15-6-6-6 6"/></svg>
+          </button>
+        </div>
+      </div>
+
+      <div id="care-guide-panel" class="care-guide-panel" aria-hidden="true">
+        <div class="care-guide-wrapper">
+          <div class="care-guide-inner">
+            <div class="care-guide-header">
+              <div class="care-guide-title-wrap">
+                <span class="care-guide-badge">防腱鞘炎指南</span>
+                <h4>手部与腕管 3 步舒缓拉伸法</h4>
+              </div>
+              <span class="care-guide-tip">建议高频键入或每工作 1 小时跟随练习 1 次</span>
+            </div>
+            <div class="care-guide-grid">
+              <article class="care-step-card">
+                <span class="care-step-number" aria-hidden="true">1</span>
+                <div class="care-step-info">
+                  <h5>动作 1：手腕伸展</h5>
+                  <p>手臂向前平举伸直，掌心朝前，另一只手轻拉手掌向后/向下，感受前臂肌群舒缓拉伸。</p>
+                  <span class="care-step-meta">⏱ 保持 15 秒 · 左右手交替</span>
+                </div>
+              </article>
+              <article class="care-step-card">
+                <span class="care-step-number" aria-hidden="true">2</span>
+                <div class="care-step-info">
+                  <h5>动作 2：指间张合</h5>
+                  <p>双手用力握拳维持 3 秒，随后用力向外张开全部手指至最大范围，活络腱鞘与筋膜血液循环。</p>
+                  <span class="care-step-meta">🔄 重复 10 次 · 节奏平稳</span>
+                </div>
+              </article>
+              <article class="care-step-card">
+                <span class="care-step-number" aria-hidden="true">3</span>
+                <div class="care-step-info">
+                  <h5>动作 3：手腕绕环</h5>
+                  <p>双手自然下垂放松，以腕关节为轴心，顺时针与逆时针缓慢匀速转动手腕，释放腕管压力。</p>
+                  <span class="care-step-meta">🔄 顺/逆时针各 10 圈</span>
+                </div>
+              </article>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
     <div class="metric-grid" aria-label="当前范围总览指标">
       <article class="metric-card">
         <span class="metric-icon metric-icon--blue" aria-hidden="true">Σ</span>
@@ -207,6 +273,7 @@
   <script src="js/calendar.js"></script>
   <script src="js/keyboard.js"></script>
   <script src="js/analysis.js"></script>
+  <script src="js/health_care.js"></script>
   <script src="js/main.js"></script>
 </body>
 </html>
