@@ -14,6 +14,9 @@ const App = {
     this.initTheme();
     CalendarHeatmap.init();
     KeyboardHeatmap.init();
+    if (window.HealthCare) {
+      HealthCare.init();
+    }
 
     if (window.Analysis) {
       Analysis.init();
@@ -306,6 +309,21 @@ const App = {
     }
     if (version !== this.refreshVersion) return;
     this.setFilterStatus('当前范围：' + this.formatRangeLabel(start, end));
+
+    if (window.HealthCare) {
+      const todayStr = window.DateUtils ? DateUtils.format(DateUtils.todayLocal()) : new Date().toISOString().slice(0, 10);
+      const todayRow = (window.CalendarHeatmap && CalendarHeatmap.data)
+        ? CalendarHeatmap.data.find((r) => r.date === todayStr)
+        : null;
+      const todayKeys = todayRow ? todayRow.count : (start === todayStr && end === todayStr ? this.currentTotal : 0);
+
+      HealthCare.evaluateContext({
+        todayKeys,
+        totalKeys: this.currentTotal,
+        start,
+        end
+      });
+    }
   },
 
   renderOverview(rows) {

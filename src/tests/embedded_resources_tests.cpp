@@ -65,6 +65,8 @@ int main() {
              ok;
         ok = expectContains(indexText, "target=\"_blank\"", "GitHub Issues must open in a new tab") && ok;
         ok = expectContains(indexText, "top-keys-body", "index.html must provide the Top 20 keys table") && ok;
+        ok = expectContains(indexText, "health-care-banner", "index.html must provide the health care banner") && ok;
+        ok = expectContains(indexText, "care-guide-panel", "index.html must provide the care guide panel") && ok;
         ok = expectNotContains(indexText, "https://d3js.org", "index.html must not reference the external d3 CDN") && ok;
         ok = expectNotContains(indexText, "https://cdn.jsdelivr.net", "index.html must not reference the external jsdelivr CDN") && ok;
     }
@@ -79,6 +81,19 @@ int main() {
         ok = expectContains(mainText, "getDefaultDateRange", "main.js must compute the default last-30-days range") && ok;
         ok = expectContains(mainText, "applyPresetRange", "main.js must wire shortcut date ranges") && ok;
         ok = expectContains(mainText, "exportData", "main.js must export CSV and JSON data") && ok;
+    }
+
+    auto healthCareScript = keyrecord::findEmbeddedResource("/js/health_care.js");
+    ok = expect(healthCareScript.has_value(), "health_care.js resource should resolve") && ok;
+    if (healthCareScript) {
+        ok = expect(healthCareScript->contentType == "application/javascript; charset=utf-8", "health_care.js MIME type mismatch") && ok;
+        const auto healthCareText = resourceText(*healthCareScript);
+        ok = expectContains(healthCareText, "HealthCare", "health_care.js must define HealthCare object") && ok;
+        ok = expectContains(healthCareText, "evaluateContext", "health_care.js must provide evaluateContext") && ok;
+        ok = expectContains(healthCareText, "tendon-high-freq", "health_care.js must include high frequency tendon tip") && ok;
+        ok = expectContains(healthCareText, "nextTip", "health_care.js must provide nextTip method") && ok;
+        ok = expectContains(healthCareText, "renderCurrentTip", "health_care.js must provide renderCurrentTip method") && ok;
+        ok = expectContains(healthCareText, "elements.message", "health_care.js must bind message element correctly") && ok;
     }
 
     auto keyboardScript = keyrecord::findEmbeddedResource("/js/keyboard.js");
@@ -119,6 +134,7 @@ int main() {
         ok = expectContains(stylesheetText, "body[data-theme=\"dark\"]", "style.css must include dark theme styles") && ok;
         ok = expectContains(stylesheetText, "linear-gradient(135deg", "Heated keycaps should use a 135-degree gradient") && ok;
         ok = expectContains(stylesheetText, "width: 1430px", "Keyboard stylesheet should include the expanded standard width") && ok;
+        ok = expectContains(stylesheetText, "health-care-banner", "style.css must include health care banner styles") && ok;
     }
 
     auto d3Vendor = keyrecord::findEmbeddedResource("/vendor/d3.v7.min.js");
