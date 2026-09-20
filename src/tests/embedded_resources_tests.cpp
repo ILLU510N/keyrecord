@@ -94,6 +94,8 @@ int main() {
         ok = expectContains(healthCareText, "nextTip", "health_care.js must provide nextTip method") && ok;
         ok = expectContains(healthCareText, "renderCurrentTip", "health_care.js must provide renderCurrentTip method") && ok;
         ok = expectContains(healthCareText, "elements.message", "health_care.js must bind message element correctly") && ok;
+        ok = expectContains(healthCareText, "isTipEligible", "health_care.js must provide isTipEligible helper") && ok;
+        ok = expectContains(healthCareText, "findFirstEligibleIndex", "health_care.js must provide findFirstEligibleIndex helper") && ok;
     }
 
     auto keyboardScript = keyrecord::findEmbeddedResource("/js/keyboard.js");

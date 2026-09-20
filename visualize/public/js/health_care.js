@@ -155,7 +155,12 @@ const HealthCare = {
       if (storedIndex !== null) {
         const parsed = parseInt(storedIndex, 10);
         if (!isNaN(parsed) && parsed >= 0 && parsed < this.tips.length) {
-          this.currentIndex = parsed;
+          if (this.isTipEligible(this.tips[parsed])) {
+            this.currentIndex = parsed;
+          } else {
+            this.currentIndex = this.findFirstEligibleIndex();
+            this.persistIndex();
+          }
         }
       }
     } catch (err) {
@@ -221,6 +226,7 @@ const HealthCare = {
       if (icon) icon.textContent = tip.icon;
       if (category) category.textContent = tip.category;
       message.textContent = tip.message;
+      this.persistIndex();
       return;
     }
 
@@ -246,6 +252,10 @@ const HealthCare = {
       this.fadeTimer = null;
     }, 200);
 
+    this.persistIndex();
+  },
+
+  persistIndex() {
     try {
       localStorage.setItem(this.storageKeys.INDEX, String(this.currentIndex));
     } catch (err) {
@@ -253,8 +263,35 @@ const HealthCare = {
     }
   },
 
+  isTipEligible(tip, context = this.currentContext) {
+    if (!tip) return false;
+    if (typeof tip.condition !== 'function') return true;
+    try {
+      return Boolean(tip.condition(context || {}));
+    } catch (err) {
+      return false;
+    }
+  },
+
+  findFirstEligibleIndex(context = this.currentContext) {
+    for (let i = 0; i < this.tips.length; i++) {
+      if (this.isTipEligible(this.tips[i], context)) {
+        return i;
+      }
+    }
+    return 0;
+  },
+
   nextTip(animate = true) {
-    this.currentIndex = (this.currentIndex + 1) % this.tips.length;
+    if (!this.tips || this.tips.length === 0) return;
+    const len = this.tips.length;
+    for (let step = 1; step <= len; step++) {
+      const candidateIndex = (this.currentIndex + step) % len;
+      if (this.isTipEligible(this.tips[candidateIndex])) {
+        this.currentIndex = candidateIndex;
+        break;
+      }
+    }
     this.renderCurrentTip(animate);
   },
 
@@ -313,7 +350,7 @@ const HealthCare = {
     };
 
     // 如果用户本次会话中刚刚主动点击过“换一条”，则不强行覆盖用户正在看的文案
-    if (this.hasUserInteracted) return;
+    if (this.hasUserInteracted && this.isTipEligible(this.tips[this.currentIndex])) return;
 
     // 寻找满足条件且优先级最高的文案
     let matchedTipIndex = -1;
@@ -321,7 +358,7 @@ const HealthCare = {
 
     for (let i = 0; i < this.tips.length; i++) {
       const tip = this.tips[i];
-      if (typeof tip.condition === 'function' && tip.condition(this.currentContext)) {
+      if (typeof tip.condition === 'function' && this.isTipEligible(tip, this.currentContext)) {
         if (tip.priority > highestPriority) {
           highestPriority = tip.priority;
           matchedTipIndex = i;
@@ -329,8 +366,15 @@ const HealthCare = {
       }
     }
 
-    if (matchedTipIndex !== -1 && matchedTipIndex !== this.currentIndex) {
-      this.currentIndex = matchedTipIndex;
+    if (matchedTipIndex !== -1) {
+      if (matchedTipIndex !== this.currentIndex) {
+        this.currentIndex = matchedTipIndex;
+        if (updateView) {
+          this.renderCurrentTip(true);
+        }
+      }
+    } else if (!this.isTipEligible(this.tips[this.currentIndex])) {
+      this.currentIndex = this.findFirstEligibleIndex();
       if (updateView) {
         this.renderCurrentTip(true);
       }

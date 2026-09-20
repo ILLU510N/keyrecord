@@ -263,7 +263,7 @@ add_executable(keyrecord ${KEYRECORD_EXECUTABLE_OPTIONS}
 )
 target_link_libraries(keyrecord PRIVATE keyrecord_capture)
 if(WIN32)
-    target_link_libraries(keyrecord PRIVATE shell32)
+    target_link_libraries(keyrecord PRIVATE shell32 ws2_32 iphlpapi)
 elseif(APPLE)
     target_link_libraries(keyrecord PRIVATE
         ${KEYRECORD_APPLICATION_SERVICES_FRAMEWORK}
@@ -360,6 +360,20 @@ add_keyrecord_test(readonly_database_tests SOURCES src/tests/readonly_database_t
 add_keyrecord_test(virtual_keys_tests SOURCES src/tests/virtual_keys_tests.cpp INCLUDES ${KEYRECORD_SRC_DIR})
 add_keyrecord_test(linux_keymap_tests SOURCES src/tests/linux_keymap_tests.cpp INCLUDES ${KEYRECORD_SRC_DIR})
 add_keyrecord_test(macos_keymap_tests SOURCES src/tests/macos_keymap_tests.cpp INCLUDES ${KEYRECORD_SRC_DIR})
+
+if(WIN32)
+    add_keyrecord_test(server_launcher_tests
+        SOURCES
+            src/tests/server_launcher_tests.cpp
+            src/platform/server_launcher_windows.cpp
+        LINKS
+            keyrecord_capture
+            shell32
+            ws2_32
+            iphlpapi
+        COPY_SQLITE_DLL
+    )
+endif()
 
 set(KEYRECORD_UTF8_TARGETS
     keyrecord_capture

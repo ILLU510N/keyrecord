@@ -1,17 +1,29 @@
 #include "platform/server_launcher.h"
 
 #include "app_config.h"
+#include "server_config.h"
 #include "visualization_url.h"
 
 #ifndef NOMINMAX
 #define NOMINMAX
 #endif
+#ifndef WIN32_LEAN_AND_MEAN
+#define WIN32_LEAN_AND_MEAN
+#endif
+#include <winsock2.h>
+#include <ws2tcpip.h>
 #include <windows.h>
+#include <iphlpapi.h>
 #include <shellapi.h>
 
+#include <algorithm>
+#include <chrono>
 #include <filesystem>
 #include <string>
 #include <vector>
+
+#pragma comment(lib, "ws2_32.lib")
+#pragma comment(lib, "iphlpapi.lib")
 
 namespace {
 
@@ -175,6 +187,131 @@ bool openDefaultBrowser(const std::string& url, std::string* errorMessage) {
 
 namespace keyrecord {
 
+bool isProcessListeningOnPort(unsigned long processId, unsigned short port) {
+    if (processId == 0) {
+        return false;
+    }
+
+    // Check IPv4 listeners.
+    for (int attempt = 0; attempt < 3; ++attempt) {
+        DWORD size = 0;
+        DWORD ret = GetExtendedTcpTable(nullptr, &size, FALSE, AF_INET, TCP_TABLE_OWNER_PID_LISTENER, 0);
+        if (size == 0) {
+            break;
+        }
+        std::vector<unsigned char> buffer(size);
+        ret = GetExtendedTcpTable(buffer.data(), &size, FALSE, AF_INET, TCP_TABLE_OWNER_PID_LISTENER, 0);
+        if (ret == NO_ERROR) {
+            const auto* table = reinterpret_cast<const MIB_TCPTABLE_OWNER_PID*>(buffer.data());
+            for (DWORD i = 0; i < table->dwNumEntries; ++i) {
+                const auto& row = table->table[i];
+                if (row.dwOwningPid == processId && ntohs(static_cast<u_short>(row.dwLocalPort)) == port) {
+                    return true;
+                }
+            }
+            break;
+        }
+        if (ret != ERROR_INSUFFICIENT_BUFFER) {
+            break;
+        }
+    }
+
+    // Check IPv6 listeners.
+    for (int attempt = 0; attempt < 3; ++attempt) {
+        DWORD size = 0;
+        DWORD ret = GetExtendedTcpTable(nullptr, &size, FALSE, AF_INET6, TCP_TABLE_OWNER_PID_LISTENER, 0);
+        if (size == 0) {
+            break;
+        }
+        std::vector<unsigned char> buffer(size);
+        ret = GetExtendedTcpTable(buffer.data(), &size, FALSE, AF_INET6, TCP_TABLE_OWNER_PID_LISTENER, 0);
+        if (ret == NO_ERROR) {
+            const auto* table = reinterpret_cast<const MIB_TCP6TABLE_OWNER_PID*>(buffer.data());
+            for (DWORD i = 0; i < table->dwNumEntries; ++i) {
+                const auto& row = table->table[i];
+                if (row.dwOwningPid == processId && ntohs(static_cast<u_short>(row.dwLocalPort)) == port) {
+                    return true;
+                }
+            }
+            break;
+        }
+        if (ret != ERROR_INSUFFICIENT_BUFFER) {
+            break;
+        }
+    }
+
+    return false;
+}
+
+bool waitForProcessListening(
+    void* processHandle,
+    unsigned short port,
+    std::chrono::milliseconds timeout,
+    std::string* errorMessage) {
+    if (!processHandle) {
+        setError(errorMessage, "Visualization server process handle is invalid");
+        return false;
+    }
+
+    const HANDLE process = static_cast<HANDLE>(processHandle);
+    const DWORD childPid = GetProcessId(process);
+    if (childPid == 0) {
+        setError(errorMessage, makeWindowsError("Failed to get visualization server process ID", GetLastError()));
+        return false;
+    }
+
+    const auto startTime = std::chrono::steady_clock::now();
+    constexpr DWORD pollIntervalMs = 25;
+
+    for (;;) {
+        const DWORD initialWait = WaitForSingleObject(process, 0);
+        if (initialWait == WAIT_OBJECT_0) {
+            DWORD exitCode = 0;
+            if (GetExitCodeProcess(process, &exitCode)) {
+                setError(errorMessage, "Visualization server exited unexpectedly with code " + std::to_string(exitCode));
+            } else {
+                setError(errorMessage, makeWindowsError("Visualization server exited unexpectedly", GetLastError()));
+            }
+            return false;
+        }
+
+        if (isProcessListeningOnPort(childPid, port)) {
+            // Re-verify child is still alive in case it exited immediately after entering listen state.
+            if (WaitForSingleObject(process, 0) == WAIT_OBJECT_0) {
+                DWORD exitCode = 0;
+                if (GetExitCodeProcess(process, &exitCode)) {
+                    setError(errorMessage, "Visualization server exited unexpectedly with code " + std::to_string(exitCode));
+                } else {
+                    setError(errorMessage, makeWindowsError("Visualization server exited unexpectedly", GetLastError()));
+                }
+                return false;
+            }
+            return true;
+        }
+
+        const auto now = std::chrono::steady_clock::now();
+        const auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(now - startTime);
+        if (elapsed >= timeout) {
+            setError(errorMessage, "Timed out waiting for visualization server to listen on port " + std::to_string(port));
+            return false;
+        }
+
+        const auto remaining = timeout - elapsed;
+        const DWORD waitMs = static_cast<DWORD>(
+            std::min<long long>(pollIntervalMs, remaining.count()));
+        const DWORD waitResult = WaitForSingleObject(process, waitMs);
+        if (waitResult == WAIT_OBJECT_0) {
+            DWORD exitCode = 0;
+            if (GetExitCodeProcess(process, &exitCode)) {
+                setError(errorMessage, "Visualization server exited unexpectedly with code " + std::to_string(exitCode));
+            } else {
+                setError(errorMessage, makeWindowsError("Visualization server exited unexpectedly", GetLastError()));
+            }
+            return false;
+        }
+    }
+}
+
 bool openVisualizationPage(std::string* errorMessage) {
     if (errorMessage) {
         errorMessage->clear();
@@ -185,6 +322,16 @@ bool openVisualizationPage(std::string* errorMessage) {
     }
 
     const auto values = parseConfigFile(getDefaultConfigFilePath());
+    const unsigned short port = values.port.value_or(DEFAULT_SERVER_PORT);
+
+    if (!waitForProcessListening(serverProcess, port, std::chrono::milliseconds(5000), errorMessage)) {
+        if (serverProcess) {
+            TerminateProcess(serverProcess, 1);
+        }
+        closeManagedServerHandles();
+        return false;
+    }
+
     return openDefaultBrowser(buildVisualizationPageUrl(values), errorMessage);
 }
 
