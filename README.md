@@ -1,5 +1,9 @@
 # KeyRecord - 跨平台键盘按键记录与可视化工具
 
+## 开源协议
+
+本项目采用 [MIT 协议](LICENSE)。第三方组件保留各自的协议和版权声明。
+
 [English](README.en.md) | 中文
 
 在 Windows 10/11、Linux 和 macOS 上本地记录键盘事件，写入 SQLite 数据库，并通过内嵌 Web 页面展示按键统计和键盘热力图。

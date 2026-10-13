@@ -1,5 +1,9 @@
 # KeyRecord
 
+## License
+
+This project is licensed under the [MIT License](LICENSE). Third-party components retain their respective licenses and copyright notices.
+
 English | [中文](README.md)
 
 KeyRecord is a local, cross-platform keyboard-event recorder and visualization tool. It captures keyboard events on Windows 10/11, Linux, and macOS, stores them in SQLite, and serves a local web UI for usage statistics and keyboard heatmaps.
