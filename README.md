@@ -262,13 +262,19 @@ db_path = D:/data/keyrecord/keyrecord.db
 
 ## 开机自启动
 
-### 方法一：通过启动文件夹
+Windows 默认不自启动。右键托盘图标，点击 **Start with Windows** 开启或关闭；勾选表示本程序的自启动项已指向当前可执行文件。开启后，当前用户下次登录 Windows 时会在后台启动 `keyrecord.exe`，不会自动打开可视化页面；选择 **Exit** 不会清除设置。
+
+设置保存在当前用户的 `HKCU\Software\Microsoft\Windows\CurrentVersion\Run` 中，值名为 `KeyRecord`，无需管理员权限。移动程序目录后，请从新位置运行程序并重新开启。该选项只管理此注册表项，不接管 Windows 系统设置中的启动应用禁用策略。
+
+如果曾按下面的方法手动设置过自启动，请自行移除旧快捷方式或计划任务，避免重复启动；菜单关闭操作不会移除它们。Linux/macOS 不提供此菜单选项。
+
+### 旧版手动方式：启动文件夹
 
 1. 按 `Win + R`，输入 `shell:startup` 打开启动文件夹
 2. 创建 `start.vbs` 的快捷方式到该文件夹
 3. 重启电脑后自动运行
 
-### 方法二：通过任务计划程序
+### 旧版手动方式：任务计划程序
 
 ```powershell
 $action = New-ScheduledTaskAction -Execute "D:\code\keyrecord\build\Release\keyrecord.exe"

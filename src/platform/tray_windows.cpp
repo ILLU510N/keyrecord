@@ -1,4 +1,6 @@
 #include "platform/tray.h"
+#include "platform/autostart_windows.h"
+#include "platform/platform_util.h"
 
 #include "resource.h"
 
@@ -16,6 +18,7 @@ constexpr wchar_t WINDOW_CLASS_NAME[] = L"KeyRecordClass";
 constexpr UINT WM_TRAYICON = WM_USER + 1;
 constexpr UINT ID_TRAY_OPEN_VISUALIZATION = 1001;
 constexpr UINT ID_TRAY_EXIT = 1002;
+constexpr UINT ID_TRAY_AUTOSTART = 1003;
 
 HWND trayWindow = nullptr;
 NOTIFYICONDATAW trayIcon = {};
@@ -43,6 +46,16 @@ LRESULT CALLBACK trayWindowProc(HWND window, UINT message, WPARAM wParam, LPARAM
                 HMENU menu = CreatePopupMenu();
                 if (menu) {
                     AppendMenuW(menu, MF_STRING, ID_TRAY_OPEN_VISUALIZATION, L"Open visualization");
+                    // 每次展开重新读取持久化状态，查询失败时不允许盲目切换。
+                    bool autostartEnabled = false;
+                    std::string errorMessage;
+                    const bool queried = keyrecord::getAutostartEnabled(autostartEnabled, &errorMessage);
+                    if (!queried) {
+                        keyrecord::debugLog(errorMessage + "\n");
+                    }
+                    AppendMenuW(menu, MF_STRING | (queried ? 0 : MF_GRAYED) |
+                                (autostartEnabled ? MF_CHECKED : MF_UNCHECKED),
+                                ID_TRAY_AUTOSTART, L"Start with Windows");
                     AppendMenuW(menu, MF_STRING, ID_TRAY_EXIT, L"Exit");
                     SetForegroundWindow(window);
                     TrackPopupMenu(
@@ -59,6 +72,17 @@ LRESULT CALLBACK trayWindowProc(HWND window, UINT message, WPARAM wParam, LPARAM
             return 0;
         case WM_COMMAND:
             switch (LOWORD(wParam)) {
+                case ID_TRAY_AUTOSTART: {
+                    bool enabled = false;
+                    std::string errorMessage;
+                    // 点击时再查询一次，避免菜单展开期间外部修改造成错误切换。
+                    if (!keyrecord::getAutostartEnabled(enabled, &errorMessage) ||
+                        !keyrecord::setAutostartEnabled(!enabled, &errorMessage)) {
+                        keyrecord::debugLog(errorMessage + "\n");
+                        keyrecord::showError(errorMessage);
+                    }
+                    break;
+                }
                 case ID_TRAY_OPEN_VISUALIZATION:
                     if (openVisualizationCallback) {
                         openVisualizationCallback();

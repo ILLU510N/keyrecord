@@ -128,6 +128,14 @@ systemctl --user daemon-reload
 systemctl --user enable --now keyrecord.service
 ```
 
+## Start with Windows
+
+Autostart is disabled by default. Right-click the tray icon and select **Start with Windows** to toggle it. A check mark means the application's autostart entry points to the current executable. When enabled, `keyrecord.exe` starts in the background at the next sign-in for the current user without opening the visualization page. Choosing **Exit** preserves this setting.
+
+The setting uses the `KeyRecord` value under `HKCU\Software\Microsoft\Windows\CurrentVersion\Run` and requires no administrator privileges. After moving the application, run it from its new location and enable the option again. This option manages only that registry entry; it does not override startup-app disabling in Windows settings.
+
+Remove any startup-folder shortcuts or scheduled tasks created manually for older versions to avoid duplicate launches. Turning off the menu option does not remove those entries. This menu option is available only on Windows.
+
 ## Configuration
 
 Both executables read `~/.config/keyrecord/config.ini` (`~` maps to `%USERPROFILE%` on Windows). Missing configuration falls back to built-in defaults. Precedence is: **built-in defaults < configuration file < command-line arguments**.
