@@ -230,6 +230,7 @@ endif()
 if(WIN32)
     set(KEYRECORD_CAPTURE_PLATFORM_SOURCES
         src/platform/capture_backend_windows.cpp
+        src/platform/autostart_windows.cpp
         src/platform/server_launcher_windows.cpp
         src/platform/tray_windows.cpp
     )
@@ -263,7 +264,7 @@ add_executable(keyrecord ${KEYRECORD_EXECUTABLE_OPTIONS}
 )
 target_link_libraries(keyrecord PRIVATE keyrecord_capture)
 if(WIN32)
-    target_link_libraries(keyrecord PRIVATE shell32 ws2_32 iphlpapi)
+    target_link_libraries(keyrecord PRIVATE shell32 ws2_32 iphlpapi advapi32)
 elseif(APPLE)
     target_link_libraries(keyrecord PRIVATE
         ${KEYRECORD_APPLICATION_SERVICES_FRAMEWORK}
@@ -371,6 +372,11 @@ if(WIN32)
             shell32
             ws2_32
             iphlpapi
+        COPY_SQLITE_DLL
+    )
+    add_keyrecord_test(autostart_tests
+        SOURCES src/tests/autostart_tests.cpp src/platform/autostart_windows.cpp
+        LINKS keyrecord_capture advapi32
         COPY_SQLITE_DLL
     )
 endif()
